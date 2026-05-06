@@ -1,4 +1,3 @@
-import Constants from "expo-constants";
 import { Redirect, Stack, useRouter, useSegments } from "expo-router";
 import { ReactNode, useEffect, useRef } from "react";
 import { Linking, LogBox, View } from "react-native";
@@ -24,40 +23,8 @@ import { CartProvider } from "../context/CartContext";
 import { ContentProvider } from "../context/ContentContext";
 import { ProfileProvider } from "../context/ProfileContext";
 import { WishlistProvider } from "../context/WishlistContext";
-import { StripeContextProvider, defaultStripeContext } from "../context/StripeContext";
-import { STRIPE_PUBLISHABLE_KEY } from "../lib/config";
+import { StripeWrapper } from "../components/StripeWrapper";
 import "./globals.css";
-
-const isExpoGo = Constants.appOwnership === "expo";
-
-function StripeWrapper({ children }: { children: ReactNode }) {
-  if (isExpoGo) {
-    return <StripeContextProvider value={defaultStripeContext}>{children}</StripeContextProvider>;
-  }
-  try {
-    const { StripeProvider, useStripe } = require("@stripe/stripe-react-native");
-    function Inner({ innerChildren }: { innerChildren: ReactNode }) {
-      const stripe = useStripe();
-      return (
-        <StripeContextProvider
-          value={{
-            initPaymentSheet: stripe.initPaymentSheet.bind(stripe),
-            presentPaymentSheet: stripe.presentPaymentSheet.bind(stripe),
-          }}
-        >
-          {innerChildren}
-        </StripeContextProvider>
-      );
-    }
-    return (
-      <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
-        <Inner innerChildren={children} />
-      </StripeProvider>
-    );
-  } catch {
-    return <StripeContextProvider value={defaultStripeContext}>{children}</StripeContextProvider>;
-  }
-}
 
 function AuthGate({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
