@@ -9,7 +9,6 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { useMessaging } from "../../context/MessagingContext";
 import { useCRMData, type CRMOrder } from "../../hooks/useCRMData";
-import { useConversationPeerId } from "../../hooks/useConversationPeerId";
 import { Avatar } from "../ui/Avatar";
 
 function centsToDollars(cents: number): string {
@@ -19,8 +18,7 @@ function centsToDollars(cents: number): string {
 export function CRMPanel() {
   const { user } = useAuth();
   const { selectedConversationId, closeCRM, setCrmCollapsed } = useMessaging();
-  const peerUserId = useConversationPeerId(selectedConversationId, user?.id);
-  const crm = useCRMData(peerUserId, user?.id);
+  const crm = useCRMData(selectedConversationId, user?.id);
   const [selectedOrder, setSelectedOrder] = useState<CRMOrder | null>(null);
 
   const handleClose = useCallback(() => {
@@ -36,7 +34,7 @@ export function CRMPanel() {
     );
   }
 
-  if (!peerUserId) {
+  if (!crm.profile) {
     return (
       <View className="flex-1 items-center justify-center bg-zinc-900 p-4">
         <Text className="text-center text-zinc-500">Loading…</Text>

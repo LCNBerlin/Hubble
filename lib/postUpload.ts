@@ -1,6 +1,4 @@
-import supabase from "./supabase";
-
-const POSTS_BUCKET = "posts";
+import { uploadToS3 } from "./s3-upload";
 
 function getExtensionAndContentType(
   type: "picture" | "video" | "audio",
@@ -46,37 +44,27 @@ function getExtensionAndContentType(
 }
 
 /**
- * Upload post media from a local file URI to Supabase Storage and return the public URL.
- * Use this before inserting a post so media_uri is a public URL that loads in the feed.
- * Bucket "posts" must exist with public read access.
+ * Upload post media to S3 via NestJS presigned URL and return the public URL.
+ * Use this before inserting a post so media_uri is a durable public URL.
  */
 export async function uploadPostMedia(
   userId: string,
   localUri: string,
   type: "picture" | "video" | "audio",
-  mimeType?: string | null
+  mimeType?: string | null,
+  authToken?: string
 ): Promise<string | null> {
-  if (!supabase || !localUri?.trim()) return null;
+  if (!localUri?.trim()) return null;
   const { ext, contentType } = getExtensionAndContentType(type, mimeType);
-  const path = `${userId}/${Date.now()}.${ext}`;
+  const key = `${userId}/${Date.now()}.${ext}`;
   try {
     const response = await fetch(localUri, { method: "GET" });
     if (!response.ok) return null;
     const arrayBuffer = await response.arrayBuffer();
-    const { error } = await supabase.storage.from(POSTS_BUCKET).upload(path, arrayBuffer, {
-      contentType,
-      upsert: false,
-    });
-    if (error) {
-      const msg = error.message || String(error);
-      console.warn("Post media upload failed:", error);
-      throw new Error(`Upload failed: ${msg}`);
-    }
-    const { data: urlData } = supabase.storage.from(POSTS_BUCKET).getPublicUrl(path);
-    return urlData.publicUrl;
+    return await uploadToS3("posts", key, arrayBuffer, contentType, authToken);
   } catch (e) {
     if (e instanceof Error) throw e;
     console.warn("Post media upload error:", e);
-    throw new Error("Post media upload failed. Check Storage: bucket 'posts' exists and is public.");
+    throw new Error("Post media upload failed.");
   }
 }

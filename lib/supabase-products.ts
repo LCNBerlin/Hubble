@@ -1,39 +1,6 @@
-import type { Product, PriceTier, ServiceSlot, ProductVariant } from "../context/ContentContext";
+import type { Product, PriceTier, ServiceSlot, ProductVariant, ProductRow } from "./product-types";
 
-export type ProductRow = {
-  id: string;
-  creator_id: string;
-  type: string;
-  title: string;
-  description: string | null;
-  price: string | null;
-  media_uri: string | null;
-  interval: string | null;
-  pinned: boolean;
-  is_sponsored: boolean | null;
-  rating: number | null;
-  inventory_status: string | null;
-  currency: string | null;
-  delivery_type: string | null;
-  price_tiers: unknown;
-  service_slots: unknown;
-  event_date: number | null;
-  event_time: string | null;
-  stock_quantity: number | null;
-  variants: unknown;
-  escrow_required: boolean | null;
-  chain: string | null;
-  is_wholesale: boolean | null;
-  token_gated: boolean | null;
-  category?: string | null;
-  categories?: string[] | null;
-  tags?: string[] | null;
-  cover_uri?: string | null;
-  go_live_at?: string | null;
-  media_mime_type?: string | null;
-  created_at?: string;
-  updated_at?: string;
-};
+export type { ProductRow };
 
 export function rowToProduct(row: ProductRow): Product {
   return {

@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useState } from "react";
 
 export type MessagingView = "list" | "chat";
+export type ConversationCategory = "all" | "priority" | "main" | "groups" | "escrow" | "bookings";
 
 type MessagingContextValue = {
   selectedConversationId: string | null;
@@ -16,6 +17,10 @@ type MessagingContextValue = {
   openCRM: () => void;
   closeCRM: () => void;
   toggleCRM: () => void;
+  category: ConversationCategory;
+  setCategory: (cat: ConversationCategory) => void;
+  search: string;
+  setSearch: (s: string) => void;
 };
 
 const MessagingContext = createContext<MessagingContextValue | null>(null);
@@ -25,6 +30,8 @@ export function MessagingProvider({ children }: { children: ReactNode }) {
   const [crmOpen, setCrmOpen] = useState(false);
   const [crmCollapsed, setCrmCollapsed] = useState(true);
   const [view, setView] = useState<MessagingView>("list");
+  const [category, setCategory] = useState<ConversationCategory>("all");
+  const [search, setSearch] = useState("");
 
   const openChat = useCallback((conversationId: string) => {
     setSelectedConversationId(conversationId);
@@ -64,6 +71,10 @@ export function MessagingProvider({ children }: { children: ReactNode }) {
     openCRM,
     closeCRM,
     toggleCRM,
+    category,
+    setCategory,
+    search,
+    setSearch,
   };
 
   return <MessagingContext.Provider value={value}>{children}</MessagingContext.Provider>;

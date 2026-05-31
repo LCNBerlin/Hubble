@@ -28,22 +28,13 @@ import { Avatar, EmptyState } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
 import { useCommunity } from "../../context/CommunityContext";
 import { useProfile } from "../../context/ProfileContext";
-import { usePostCommentCounts } from "../../hooks/usePostCommentCounts";
-import { usePostDislikes } from "../../hooks/usePostDislikes";
-import { usePostLikes } from "../../hooks/usePostLikes";
-import { usePostReposts } from "../../hooks/usePostReposts";
+import { usePostEngagement } from "../../hooks/usePostEngagement";
 import {
   getCurrentPositionAsync,
   Accuracy as LocationAccuracy,
   requestForegroundPermissionsAsync,
 } from "../../lib/location";
-import {
-  recencyDecayScore,
-  normalize,
-  reputationScore as reputationScoreFn,
-  getTokenBoost,
-  FEED_RANKING_WEIGHTS,
-} from "../../lib/feed-ranking";
+import { rankPosts, postMatchesTopics, type RankingContext } from "../../lib/feed-ranking";
 import { reportPostWatch } from "../../lib/postWatchTime";
 import supabase from "../../lib/supabase";
 import type { PostRow, ProfileRow } from "../../lib/supabase-profiles";
@@ -235,11 +226,6 @@ async function fetchSponsoredPosts(limit: number): Promise<FeedPost[]> {
   }));
 }
 
-function postMatchesTopics(post: PostRow, topics: string[]): boolean {
-  if (topics.length === 0) return false;
-  const text = [post.title, post.body].filter(Boolean).join(" ").toLowerCase();
-  return topics.some((t) => t.trim().toLowerCase() && text.includes(t.trim().toLowerCase()));
-}
 
 const TRENDING_STRIP_ITEM_WIDTH = 120;
 const TRENDING_STRIP_ITEM_HEIGHT = 100;
@@ -928,10 +914,7 @@ export default function FeedScreen() {
     ],
     [postIds, randomPostIds, trendingPostIds, nearbyPostIds, sponsoredPostIds]
   );
-  const { getState: getLikeState, toggleLike } = usePostLikes(allPostIds);
-  const { getState: getDislikeState, toggleDislike } = usePostDislikes(allPostIds);
-  const { getCommentCount, refresh: refreshCommentCounts } = usePostCommentCounts(allPostIds);
-  const { getState: getRepostState, toggleRepost } = usePostReposts(allPostIds);
+  const { getEngagement, toggleLike, toggleDislike, toggleRepost, refresh: refreshEngagement } = usePostEngagement(allPostIds);
 
   const handleRandomPostsLoaded = useCallback((ids: string[]) => {
     setRandomPostIds((prev) => [...new Set([...prev, ...ids])]);
@@ -945,85 +928,43 @@ export default function FeedScreen() {
   const sortedItems = useMemo(() => {
     const list = [...itemsFilteredByType];
     if (sortBy === "for_you") {
-      if (list.length === 0) return list;
-      const nowMs = Date.now();
-      const recencyScores = list.map((i) => recencyDecayScore(new Date(i.post.created_at).getTime(), nowMs));
-      const minRec = Math.min(...recencyScores);
-      const maxRec = Math.max(...recencyScores);
-      const maxLikes = Math.max(1, ...list.map((i) => getLikeState(i.post.id).likeCount));
-      const maxComments = Math.max(1, ...list.map((i) => getCommentCount(i.post.id)));
-      const velocityValues = list.map((i) => engagementVelocityByPostId[i.post.id] ?? 0);
-      const maxVelocity = Math.max(1, ...velocityValues);
-      const depthValues = list.map((i) => (commentDepthByPostId[i.post.id]?.total ?? 0) + (commentDepthByPostId[i.post.id]?.replyCount ?? 0) * 0.5);
-      const maxDepth = Math.max(1, ...depthValues);
-      const watchValues = list.map((i) => watchTimeByPostId[i.post.id] ?? 0);
-      const maxWatch = Math.max(1, ...watchValues);
-      const W = FEED_RANKING_WEIGHTS;
-      const wLikes = 0.1;
-      const wComments = 0.1;
-      return list
-        .map((item) => {
-          const t = new Date(item.post.created_at).getTime();
-          const recencyNorm = maxRec > minRec ? normalize(recencyDecayScore(t, nowMs), minRec, maxRec) : 1;
-          const likeNorm = getLikeState(item.post.id).likeCount / maxLikes;
-          const commentNorm = getCommentCount(item.post.id) / maxComments;
-          const velocityNorm = (engagementVelocityByPostId[item.post.id] ?? 0) / maxVelocity;
-          const depthNorm = maxDepth > 0
-            ? ((commentDepthByPostId[item.post.id]?.total ?? 0) + (commentDepthByPostId[item.post.id]?.replyCount ?? 0) * 0.5) / maxDepth
-            : 0;
-          const watchNorm = (watchTimeByPostId[item.post.id] ?? 0) / maxWatch;
-          const followBoost = followingIds.has(item.post.user_id) ? 1 : 0;
-          const repNorm = item.profile
-            ? reputationScoreFn(item.profile.reputation_score, item.profile.verified_tier)
-            : 0;
-          const geoBoost = nearbyPostIdsSet.has(item.post.id) ? 1 : 0;
-          const purchaseBoost = purchasedCreatorIds.has(item.post.user_id) ? 1 : 0;
-          const sponsoredBoost = item.post.is_sponsored ? 1 : 0;
-          const matchesMore = postMatchesTopics(item.post, algorithmSeeMore);
-          const matchesLess = postMatchesTopics(item.post, algorithmSeeLess);
-          const tokenBoost = user?.id ? getTokenBoost(user.id, item.post.id) : 0;
-          const score =
-            W.recencyDecay * recencyNorm +
-            W.follow * followBoost +
-            W.engagementVelocity * velocityNorm +
-            W.commentDepth * depthNorm +
-            W.watchTime * watchNorm +
-            wLikes * likeNorm +
-            wComments * commentNorm +
-            W.reputation * repNorm +
-            W.geo * geoBoost +
-            W.purchaseBehavior * purchaseBoost +
-            W.sponsored * sponsoredBoost +
-            W.seeMore * (matchesMore ? 1 : 0) +
-            W.seeLess * (matchesLess ? 1 : 0) +
-            W.token * tokenBoost;
-          return { item, score };
-        })
-        .sort((a, b) => b.score - a.score)
-        .map((x) => x.item);
+      const ctx: RankingContext = {
+        followedIds: followingIds,
+        purchasedCreatorIds,
+        nearbyPostIds: nearbyPostIdsSet,
+        seeMoreTopics: algorithmSeeMore,
+        seeLessTopics: algorithmSeeLess,
+        engagementVelocityByPostId,
+        commentDepthByPostId,
+        watchTimeByPostId,
+        getLikeCount: (id) => getEngagement(id).likeCount,
+        getCommentCount: (id) => getEngagement(id).commentCount,
+        viewerUserId: user?.id,
+      };
+      return rankPosts(list, ctx);
     }
     if (sortBy === "random") {
       const reposted: FeedPost[] = [];
       const rest: FeedPost[] = [];
       list.forEach((item) => {
-        if (getRepostState(item.post.id).isReposted) reposted.push(item);
+        if (getEngagement(item.post.id).isReposted) reposted.push(item);
         else rest.push(item);
       });
       return [...reposted, ...shuffleArray(rest)];
     }
     return list.sort((a, b) => {
-      const aReposted = getRepostState(a.post.id).isReposted;
-      const bReposted = getRepostState(b.post.id).isReposted;
+      const aReposted = getEngagement(a.post.id).isReposted;
+      const bReposted = getEngagement(b.post.id).isReposted;
       if (aReposted && !bReposted) return -1;
       if (!aReposted && bReposted) return 1;
       if (sortBy === "most_liked") {
-        const aLikes = getLikeState(a.post.id).likeCount;
-        const bLikes = getLikeState(b.post.id).likeCount;
+        const aLikes = getEngagement(a.post.id).likeCount;
+        const bLikes = getEngagement(b.post.id).likeCount;
         if (aLikes !== bLikes) return bLikes - aLikes;
       }
       if (sortBy === "most_commented") {
-        const aComments = getCommentCount(a.post.id);
-        const bComments = getCommentCount(b.post.id);
+        const aComments = getEngagement(a.post.id).commentCount;
+        const bComments = getEngagement(b.post.id).commentCount;
         if (aComments !== bComments) return bComments - aComments;
       }
       const aTime = new Date(a.post.created_at).getTime();
@@ -1033,10 +974,8 @@ export default function FeedScreen() {
     });
   }, [
     itemsFilteredByType,
-    getRepostState,
+    getEngagement,
     sortBy,
-    getLikeState,
-    getCommentCount,
     followingIds,
     nearbyPostIdsSet,
     purchasedCreatorIds,
@@ -1194,21 +1133,8 @@ export default function FeedScreen() {
     [router]
   );
 
-  const handleLike = useCallback(
-    async (postId: string) => {
-      if (getDislikeState(postId).isDisliked) await toggleDislike(postId);
-      toggleLike(postId);
-    },
-    [getDislikeState, toggleDislike, toggleLike]
-  );
-
-  const handleDislike = useCallback(
-    async (postId: string) => {
-      if (getLikeState(postId).isLiked) await toggleLike(postId);
-      toggleDislike(postId);
-    },
-    [getLikeState, toggleLike, toggleDislike]
-  );
+  const handleLike = toggleLike;
+  const handleDislike = toggleDislike;
 
   const handleRequestTip = useCallback((postTitle?: string) => {
     setTipForPostTitle(postTitle);
@@ -1356,10 +1282,10 @@ export default function FeedScreen() {
               isFocused={isScreenFocused && index === focusedFeedIndex}
               cardWidth={cardWidth}
               itemHeight={itemHeight}
-            getLikeState={getLikeState}
-            getDislikeState={getDislikeState}
-            getRepostState={getRepostState}
-            getCommentCount={getCommentCount}
+            getLikeState={getEngagement}
+            getDislikeState={getEngagement}
+            getRepostState={getEngagement}
+            getCommentCount={(id) => getEngagement(id).commentCount}
             savedPostIds={savedPostIds}
             handlePressCreator={handlePressCreator}
             handleLike={handleLike}
@@ -1368,7 +1294,7 @@ export default function FeedScreen() {
             handleRequestTip={handleRequestTip}
             toggleRepost={toggleRepost}
             toggleSavePost={toggleSavePost}
-            refreshCommentCounts={refreshCommentCounts}
+            refreshCommentCounts={refreshEngagement}
             onRandomPostsLoaded={handleRandomPostsLoaded}
             onReportUser={handleReportUser}
             onBlockUser={handleBlockUser}

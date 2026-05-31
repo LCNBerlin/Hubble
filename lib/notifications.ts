@@ -1,26 +1,11 @@
-import supabase from "./supabase";
+import { apiGet, apiPatch, apiPost } from "./api";
 
 export type NotificationType =
-  | "like"
-  | "comment"
-  | "comment_reply"
-  | "comment_like"
-  | "follow"
-  | "repost"
-  | "save_post"
-  | "mention"
-  | "product_sale"
-  | "product_review"
-  | "order_shipped"
-  | "tracking_updated"
-  | "delivery_confirmed"
-  | "order_refunded"
-  | "order_disputed"
-  | "tip_received"
-  | "cart_reminder"
-  | "abandoned_cart_creator"
-  | "booking"
-  | "appointment_reminder";
+  | "like" | "comment" | "comment_reply" | "comment_like" | "follow"
+  | "repost" | "save_post" | "mention" | "product_sale" | "product_review"
+  | "order_shipped" | "tracking_updated" | "delivery_confirmed" | "order_refunded"
+  | "order_disputed" | "tip_received" | "cart_reminder" | "abandoned_cart_creator"
+  | "booking" | "appointment_reminder";
 
 export type NotificationRow = {
   id: string;
@@ -39,100 +24,43 @@ export type NotificationWithActor = NotificationRow & {
   actor?: { id: string; display_name: string | null; username: string; avatar_url: string | null } | null;
 };
 
-/** Fetch notifications for the current user with actor profile (actor may be null for system notifications). */
-export async function getNotifications(
-  userId: string,
-  limit = 50
-): Promise<NotificationWithActor[]> {
-  if (!supabase) return [];
-  const { data, error } = await supabase
-    .from("notifications")
-    .select("*, actor:profiles!actor_id(id, display_name, username, avatar_url)")
-    .eq("recipient_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) {
-    if (__DEV__) {
-      console.warn("[notifications] getNotifications error (try running schema migration):", error.message);
-    }
-    const fallback = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("recipient_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(limit);
-    if (fallback.error) {
-      if (__DEV__) console.warn("[notifications] fallback error:", fallback.error.message);
-      return [];
-    }
-    return ((fallback.data ?? []) as NotificationWithActor[]).map((row) => ({ ...row, actor: null }));
+export async function getNotifications(_userId: string, limit = 50): Promise<NotificationWithActor[]> {
+  return apiGet<NotificationWithActor[]>(`/notifications?limit=${limit}`);
+}
+
+export async function markNotificationRead(notificationId: string, _userId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await apiPatch("/notifications/read", { ids: [notificationId] });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed" };
   }
-  const list = (data as NotificationWithActor[]) ?? [];
-  if (__DEV__ && userId) {
-    console.log("[notifications] loaded", list.length, "for user", userId.slice(0, 8) + "...");
+}
+
+export async function markAllNotificationsRead(_userId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await apiPatch("/notifications/read-all");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed" };
   }
-  return list;
 }
 
-/** Mark a single notification as read. */
-export async function markNotificationRead(
-  notificationId: string,
-  userId: string
-): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await supabase
-    .from("notifications")
-    .update({ read_at: new Date().toISOString() })
-    .eq("id", notificationId)
-    .eq("recipient_id", userId);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
-}
-
-/** Mark all notifications as read for the current user. */
-export async function markAllNotificationsRead(
-  userId: string
-): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await supabase
-    .from("notifications")
-    .update({ read_at: new Date().toISOString() })
-    .eq("recipient_id", userId)
-    .is("read_at", null);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
-}
-
-/** Get unread notification count for the current user. */
-export async function getUnreadNotificationCount(userId: string): Promise<number> {
-  const { count, error } = await supabase
-    .from("notifications")
-    .select("id", { count: "exact", head: true })
-    .eq("recipient_id", userId)
-    .is("read_at", null);
-  if (error) return 0;
-  return count ?? 0;
+export async function getUnreadNotificationCount(_userId: string): Promise<number> {
+  try {
+    const { count } = await apiGet<{ count: number }>("/notifications/unread-count");
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 /**
- * Subscribe to realtime INSERT/UPDATE on notifications for the given user.
- * Call onChange() whenever a row is inserted or updated so the caller can refresh count or list.
- * Returns an unsubscribe function (call on cleanup).
+ * Polling-based replacement for Supabase realtime notification subscription.
+ * Calls onChange every POLL_INTERVAL_MS. Returns an unsubscribe function.
  */
-export function subscribeToNotifications(userId: string, onChange: () => void): () => void {
-  if (!supabase || !userId) return () => {};
-  const channel = supabase
-    .channel(`notifications:${userId}`)
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "notifications",
-        filter: `recipient_id=eq.${userId}`,
-      },
-      () => onChange()
-    )
-    .subscribe();
-  return () => {
-    supabase.removeChannel(channel);
-  };
+export function subscribeToNotifications(_userId: string, onChange: () => void): () => void {
+  const POLL_INTERVAL_MS = 3000;
+  const interval = setInterval(() => onChange(), POLL_INTERVAL_MS);
+  return () => clearInterval(interval);
 }

@@ -19,7 +19,7 @@ import {
 } from "../../lib/referral";
 
 export default function SignupScreen() {
-  const { signUp, isSupabaseConfigured } = useAuth();
+  const { signUp } = useAuth();
   const router = useRouter();
   const passwordRef = useRef<TextInput>(null);
 
@@ -75,14 +75,6 @@ export default function SignupScreen() {
         <Text className="text-2xl font-bold text-zinc-100">Create account</Text>
         <Text className="mt-1 text-sm text-zinc-500">Join Hubble to create and discover</Text>
 
-        {!isSupabaseConfigured ? (
-          <View className="mt-4 rounded-xl border border-amber-800/80 bg-amber-950/50 p-4">
-            <Text className="text-sm font-medium text-amber-200">Supabase is not configured yet</Text>
-            <Text className="mt-1 text-xs text-amber-200/80">
-              Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to a .env file in the project root (see .env.example), then restart the app with: npx expo start --clear
-            </Text>
-          </View>
-        ) : null}
 
         <TextInput
           autoCapitalize="none"

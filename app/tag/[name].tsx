@@ -20,10 +20,7 @@ import { PostCard } from "../../components/PostCard";
 import { PostPreviewCard } from "../../components/PostPreviewCard";
 import { TipModal } from "../../components/TipModal";
 import { useAuth } from "../../context/AuthContext";
-import { usePostCommentCounts } from "../../hooks/usePostCommentCounts";
-import { usePostDislikes } from "../../hooks/usePostDislikes";
-import { usePostLikes } from "../../hooks/usePostLikes";
-import { usePostReposts } from "../../hooks/usePostReposts";
+import { usePostEngagement } from "../../hooks/usePostEngagement";
 import supabase from "../../lib/supabase";
 import type { ProfileRow, PostRow } from "../../lib/supabase-profiles";
 import { useProfile } from "../../context/ProfileContext";
@@ -298,10 +295,7 @@ export default function TagFeedScreen() {
   }, [load]);
 
   const postIds = items.map((i) => i.post.id);
-  const { getState: getLikeState, toggleLike } = usePostLikes(postIds);
-  const { getState: getDislikeState, toggleDislike } = usePostDislikes(postIds);
-  const { getState: getRepostState, toggleRepost } = usePostReposts(postIds);
-  const { getCommentCount, refresh: refreshCommentCounts } = usePostCommentCounts(postIds);
+  const { getEngagement, toggleLike, toggleDislike, toggleRepost, refresh: refreshEngagement } = usePostEngagement(postIds);
   const safeSavedPostIds = savedPostIds ?? [];
 
   const handlePressCreator = useCallback(
@@ -413,10 +407,10 @@ export default function TagFeedScreen() {
                     isFocused={focusedTagIndex === index}
                     cardWidth={tagModalCardWidth}
                     itemHeight={tagModalItemHeight}
-                  getLikeState={getLikeState}
-                  getDislikeState={getDislikeState}
-                  getRepostState={getRepostState}
-                  getCommentCount={getCommentCount}
+                  getLikeState={getEngagement}
+                  getDislikeState={getEngagement}
+                  getRepostState={getEngagement}
+                  getCommentCount={(id) => getEngagement(id).commentCount}
                   safeSavedPostIds={safeSavedPostIds}
                   handlePressCreator={handlePressCreator}
                   handlePressHashtag={handlePressHashtag}
@@ -425,7 +419,7 @@ export default function TagFeedScreen() {
                   toggleDislike={toggleDislike}
                   toggleRepost={toggleRepost}
                   toggleSavePost={toggleSavePost}
-                  refreshCommentCounts={refreshCommentCounts}
+                  refreshCommentCounts={refreshEngagement}
                   />
                 </View>
               )}

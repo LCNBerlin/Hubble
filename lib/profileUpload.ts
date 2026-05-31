@@ -1,11 +1,8 @@
 import { decode } from "base64-arraybuffer";
 import * as ImagePicker from "expo-image-picker";
 import { Alert, Linking } from "react-native";
-import supabase from "./supabase";
+import { uploadToS3 } from "./s3-upload";
 
-const PROFILE_BUCKET = "profile";
-
-/** Supported image MIME types and their file extensions for upload. */
 const IMAGE_MIME_TO_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/jpg": "jpg",
@@ -29,7 +26,7 @@ function getContentTypeAndExt(mimeType: string | undefined): { contentType: stri
 
 export type PickImageResult = { uri: string; base64: string; mimeType?: string } | null;
 
-/** Only the account owner should call this. Picks a photo for profile picture (images only; video selection is rejected). */
+/** Only the account owner should call this. Picks a photo for profile picture (images only). */
 export async function pickProfileImage(): Promise<PickImageResult> {
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (status !== "granted") {
@@ -61,7 +58,7 @@ export async function pickProfileImage(): Promise<PickImageResult> {
   return { uri: asset.uri, base64, mimeType: asset.mimeType ?? "image/jpeg" };
 }
 
-/** Only the account owner should call this. Picks a photo for banner (images only; video selection is rejected). */
+/** Only the account owner should call this. Picks a photo for banner (images only). */
 export async function pickBannerImage(): Promise<PickImageResult> {
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (status !== "granted") {
@@ -94,46 +91,24 @@ export async function pickBannerImage(): Promise<PickImageResult> {
 }
 
 /**
- * Upload profile image (avatar or banner) to Supabase Storage and return the public URL.
- * Handles JPEG, PNG, GIF, WebP, HEIC, HEIF, BMP, ICO, etc. Bucket "profile" must exist with public read.
- *
- * Throws an Error when upload or URL generation fails so callers can surface a clear message.
+ * Upload profile image (avatar or banner) to S3 via NestJS presigned URL and return the public URL.
+ * Throws on failure so callers can surface a clear message.
  */
 export async function uploadProfileImage(
   userId: string,
   kind: "avatar" | "banner",
   base64Data: string,
-  mimeType?: string
+  mimeType?: string,
+  authToken?: string
 ): Promise<string> {
-  if (!supabase) {
-    throw new Error("Storage client is not configured.");
-  }
   const { contentType, ext } = getContentTypeAndExt(mimeType);
-  const path = `${kind === "avatar" ? "avatars" : "banners"}/${userId}.${ext}`;
+  const key = `${kind === "avatar" ? "avatars" : "banners"}/${userId}.${ext}`;
   try {
     const arrayBuffer = decode(base64Data);
-    const { error } = await supabase.storage.from(PROFILE_BUCKET).upload(path, arrayBuffer, {
-      contentType,
-      upsert: true,
-    });
-    if (error) {
-      console.warn("Profile image upload failed:", error);
-      throw new Error(error.message || "Upload to profile storage failed.");
-    }
-    const { data: urlData, error: urlError } = supabase.storage.from(PROFILE_BUCKET).getPublicUrl(path);
-    if (urlError) {
-      console.warn("Profile image public URL error:", urlError);
-      throw new Error(urlError.message || "Could not generate public URL for profile image.");
-    }
-    if (!urlData?.publicUrl) {
-      throw new Error("Profile image URL is missing.");
-    }
-    return urlData.publicUrl;
+    return await uploadToS3("profiles", key, arrayBuffer, contentType, authToken);
   } catch (e) {
     console.warn("Profile image upload error:", e);
-    if (e instanceof Error) {
-      throw e;
-    }
+    if (e instanceof Error) throw e;
     throw new Error("Unexpected error while uploading profile image.");
   }
 }

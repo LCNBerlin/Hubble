@@ -3,7 +3,7 @@
  * On device, set EXPO_PUBLIC_API_URL to your machine IP (e.g. http://192.168.1.10:4242).
  */
 export const API_URL =
-  (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) || "http://localhost:4242";
+  (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_API_URL) || "http://localhost:4243";
 
 export const STRIPE_PUBLISHABLE_KEY =
   (typeof process !== "undefined" && process.env?.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY) || "";

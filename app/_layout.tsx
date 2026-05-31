@@ -3,10 +3,16 @@ import { Redirect, Stack, useRouter, useSegments } from "expo-router";
 import { ReactNode, useEffect, useRef } from "react";
 import { Linking, LogBox, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { addNotificationResponseListener } from "../lib/pushNotifications";
 
-// Suppress SafeAreaView deprecation warning from dependencies (e.g. @stripe/stripe-react-native).
-// The app uses react-native-safe-area-context everywhere; the warning is from a third-party.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 30_000, retry: 2, gcTime: 5 * 60_000 },
+    mutations: { retry: 1 },
+  },
+});
+
 LogBox.ignoreLogs([
   "SafeAreaView has been deprecated and will be removed in a future release",
 ]);
@@ -104,9 +110,7 @@ function ReferralRefCapture() {
           const ref = match ? decodeURIComponent(match[1].trim()) : null;
           if (ref) await setStoredReferralRef(ref);
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     })();
   }, []);
 
@@ -121,9 +125,7 @@ function ReferralRefCapture() {
           await recordReferralClick(referrerId, ref);
           recordedClickForRef.current = true;
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     })();
   }, [user]);
   return null;
@@ -131,30 +133,32 @@ function ReferralRefCapture() {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <AuthProvider>
-          <ContentProvider>
-            <ProfileProvider>
-              <CartProvider>
-                <WishlistProvider>
-                  <ReferralRefCapture />
-                  <StripeWrapper>
-                    <AuthGate>
-                      <PushNotificationHandler />
-                      <CommunityProvider>
-                        <NotificationsProvider>
-                          <Stack screenOptions={{ headerShown: false }} />
-                        </NotificationsProvider>
-                      </CommunityProvider>
-                    </AuthGate>
-                  </StripeWrapper>
-                </WishlistProvider>
-              </CartProvider>
-            </ProfileProvider>
-          </ContentProvider>
-        </AuthProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <QueryClientProvider client={queryClient}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <AuthProvider>
+            <ContentProvider>
+              <ProfileProvider>
+                <CartProvider>
+                  <WishlistProvider>
+                    <ReferralRefCapture />
+                    <StripeWrapper>
+                      <AuthGate>
+                        <PushNotificationHandler />
+                        <CommunityProvider>
+                          <NotificationsProvider>
+                            <Stack screenOptions={{ headerShown: false }} />
+                          </NotificationsProvider>
+                        </CommunityProvider>
+                      </AuthGate>
+                    </StripeWrapper>
+                  </WishlistProvider>
+                </CartProvider>
+              </ProfileProvider>
+            </ContentProvider>
+          </AuthProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </QueryClientProvider>
   );
 }

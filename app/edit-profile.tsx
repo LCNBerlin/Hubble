@@ -21,17 +21,13 @@ import {
   requestForegroundPermissionsAsync,
   Accuracy as LocationAccuracy,
 } from "../lib/location";
-import {
-  pickBannerImage,
-  pickProfileImage,
-  uploadProfileImage,
-} from "../lib/profileUpload";
+import { pickBannerImage, pickProfileImage, uploadProfileImage } from "../lib/profileUpload";
 import supabase from "../lib/supabase";
 
 export default function EditProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { profile, refetchProfile } = useProfile();
+  const { profile, refetchProfile, updateAvatar } = useProfile();
 
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
@@ -105,34 +101,19 @@ export default function EditProfileScreen() {
   }, [user?.id, displayName, username, bio, location, lat, lng, avatarUri, bannerUri, avatarUploading, bannerUploading, refetchProfile, router]);
 
   const handleChangeAvatar = useCallback(async () => {
-    if (!user?.id || !supabase) return;
     const picked = await pickProfileImage();
     if (!picked) return;
     setAvatarUploading(true);
     try {
-      const url = await uploadProfileImage(user.id, "avatar", picked.base64, picked.mimeType);
-      // Optimistically update local state so the edit screen preview updates immediately.
+      const url = await updateAvatar(picked.base64, picked.mimeType);
       setAvatarUri(url);
-      // Persist avatar change immediately so it shows on the profile even if the user forgets to tap Save.
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          avatar_url: url,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
-      if (error) {
-        Alert.alert("Profile photo", error.message || "Saved locally, but could not update your profile. Try saving again.");
-      } else {
-        await refetchProfile();
-      }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Could not upload profile picture.";
       Alert.alert("Upload failed", message);
     } finally {
       setAvatarUploading(false);
     }
-  }, [user?.id, supabase, refetchProfile]);
+  }, [updateAvatar]);
 
   const handleChangeBanner = useCallback(async () => {
     if (!user?.id) return;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import supabase from "../lib/supabase";
+import { apiGet } from "../lib/api";
 
 export type OrderItemRow = {
   id: string;
@@ -34,50 +34,18 @@ export function useOrdersForWallet(userId: string | undefined) {
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    if (!userId || !supabase) {
+    if (!userId) {
       setOrders([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    const { data: ordersData, error: ordersError } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("buyer_id", userId)
-      .order("created_at", { ascending: false });
-
-    if (ordersError) {
+    try {
+      const data = await apiGet<OrderWithItems[]>("/orders");
+      setOrders(data ?? []);
+    } catch {
       setOrders([]);
-      setLoading(false);
-      return;
     }
-
-    const orderList = (ordersData ?? []) as OrderRow[];
-    if (orderList.length === 0) {
-      setOrders([]);
-      setLoading(false);
-      return;
-    }
-
-    const orderIds = orderList.map((o) => o.id);
-    const { data: itemsData } = await supabase
-      .from("order_items")
-      .select("*")
-      .in("order_id", orderIds);
-
-    const itemsByOrder = new Map<string, OrderItemRow[]>();
-    (itemsData ?? []).forEach((row: OrderItemRow) => {
-      const list = itemsByOrder.get(row.order_id) ?? [];
-      list.push(row);
-      itemsByOrder.set(row.order_id, list);
-    });
-
-    setOrders(
-      orderList.map((o) => ({
-        ...o,
-        order_items: itemsByOrder.get(o.id) ?? [],
-      }))
-    );
     setLoading(false);
   }, [userId]);
 

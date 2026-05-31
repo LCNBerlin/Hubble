@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Message } from "../lib/conversations";
-import {
-  fetchMessages,
-  sendMessage as sendMessageApi,
-  subscribeToMessages,
-  markConversationRead,
-} from "../lib/conversations";
+import { fetchMessages, sendMessage as sendMessageApi, markConversationRead } from "../lib/conversations";
+
+const POLL_INTERVAL_MS = 3000;
 
 export function useMessages(conversationId: string | null, userId: string | undefined) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
-  const channelRef = useRef<ReturnType<typeof subscribeToMessages>>(null);
+  const lastMessageAtRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     if (!conversationId) {
@@ -20,6 +17,7 @@ export function useMessages(conversationId: string | null, userId: string | unde
     }
     setLoading(true);
     const list = await fetchMessages(conversationId);
+    if (list.length > 0) lastMessageAtRef.current = list[list.length - 1].created_at;
     setMessages(list);
     setLoading(false);
   }, [conversationId]);
@@ -33,30 +31,27 @@ export function useMessages(conversationId: string | null, userId: string | unde
     markConversationRead(conversationId, userId);
   }, [conversationId, userId]);
 
+  // Polling for new messages (replaces Supabase realtime channel)
   useEffect(() => {
     if (!conversationId || !userId) return;
-    const channel = subscribeToMessages(
-      conversationId,
-      (payload) => {
+    const interval = setInterval(async () => {
+      const since = lastMessageAtRef.current;
+      if (!since) return;
+      try {
+        const newMsgs = await fetchMessages(conversationId, 50, undefined);
         setMessages((prev) => {
-          const exists = prev.some((m) => m.id === payload.new.id);
-          if (exists) return prev;
-          const fromUs = payload.new.sender_id === userId;
-          const withTemp = prev.filter((m) => String(m.id).startsWith("temp-"));
-          if (fromUs && withTemp.length > 0)
-            return prev.filter((m) => !String(m.id).startsWith("temp-")).concat(payload.new);
-          return [...prev, payload.new];
+          const existingIds = new Set(prev.map((m) => m.id));
+          const fresh = newMsgs.filter((m) => !existingIds.has(m.id));
+          if (!fresh.length) return prev;
+          if (fresh.length > 0) lastMessageAtRef.current = fresh[fresh.length - 1].created_at;
+          return [
+            ...prev.filter((m) => !String(m.id).startsWith("temp-")),
+            ...fresh,
+          ];
         });
-      },
-      (payload) => {
-        setMessages((prev) => prev.map((m) => (m.id === payload.new.id ? payload.new : m)));
-      }
-    );
-    channelRef.current = channel;
-    return () => {
-      channel?.unsubscribe();
-      channelRef.current = null;
-    };
+      } catch {}
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, [conversationId, userId]);
 
   const sendMessage = useCallback(
@@ -76,6 +71,7 @@ export function useMessages(conversationId: string | null, userId: string | unde
       setMessages((prev) => [...prev, optimistic]);
       const msg = await sendMessageApi(conversationId, userId, body, options);
       if (msg) {
+        lastMessageAtRef.current = msg.created_at;
         setMessages((prev) => prev.map((m) => (m.id === tempId ? msg : m)));
         return msg;
       }

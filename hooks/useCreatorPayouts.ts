@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import supabase from "../lib/supabase";
+import { apiGet } from "../lib/api";
 
 export type CreatorPayoutRow = {
   id: string;
@@ -19,21 +19,17 @@ export function useCreatorPayouts(creatorId: string | undefined) {
   const [loading, setLoading] = useState(true);
 
   const fetchPayouts = useCallback(async () => {
-    if (!creatorId || !supabase) {
+    if (!creatorId) {
       setPayouts([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase
-      .from("creator_payouts")
-      .select("*")
-      .eq("creator_id", creatorId)
-      .order("created_at", { ascending: false });
-    if (error) {
+    try {
+      const data = await apiGet<CreatorPayoutRow[]>("/orders/payouts");
+      setPayouts(data ?? []);
+    } catch {
       setPayouts([]);
-    } else {
-      setPayouts((data ?? []) as CreatorPayoutRow[]);
     }
     setLoading(false);
   }, [creatorId]);

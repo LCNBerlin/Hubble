@@ -1,94 +1,122 @@
-import type { Session, User } from "@supabase/supabase-js";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
-import { upsertProfileForUser } from "../lib/supabase-profiles";
-import supabase from "../lib/supabase";
+import { API_URL } from "../lib/config";
+import { storeTokens, clearTokens, getStoredTokens } from "../lib/api";
+
+export type HubbleUser = {
+  id: string;
+  email: string;
+};
+
+export type HubbleSession = {
+  accessToken: string;
+  refreshToken: string;
+};
 
 type AuthContextType = {
-  user: User | null;
-  session: Session | null;
+  user: HubbleUser | null;
+  session: HubbleSession | null;
   isLoading: boolean;
-  isSupabaseConfigured: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: Error | null; data?: { user: User } }>;
+  signUp: (email: string, password: string) => Promise<{ error: Error | null; data?: { user: HubbleUser } }>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+function parseJwt(token: string): { sub: string; email: string } | null {
+  try {
+    const payload = token.split(".")[1];
+    const decoded = JSON.parse(atob(payload));
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(!!supabase);
+  const [user, setUser] = useState<HubbleUser | null>(null);
+  const [session, setSession] = useState<HubbleSession | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!supabase) {
+    (async () => {
+      const { accessToken, refreshToken } = await getStoredTokens();
+      if (accessToken && refreshToken) {
+        const payload = parseJwt(accessToken);
+        if (payload) {
+          setUser({ id: payload.sub, email: payload.email });
+          setSession({ accessToken, refreshToken });
+        }
+      }
       setIsLoading(false);
-      return;
-    }
-
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      setIsLoading(false);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      setIsLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    })();
   }, []);
 
-  // Ensure profile row exists for the current user (sign-in/sign-up)
-  useEffect(() => {
-    if (!user || !supabase) return;
-    upsertProfileForUser(user).catch(() => {});
-  }, [user?.id]);
-
   const signIn = useCallback(async (email: string, password: string) => {
-    if (!supabase) {
-      return {
-        error: new Error(
-          "Supabase is not configured. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to .env"
-        ) as Error,
-      };
+    try {
+      const res = await fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return { error: new Error(body.message || "Invalid credentials") };
+      }
+      const { accessToken, refreshToken } = await res.json();
+      await storeTokens(accessToken, refreshToken);
+      const payload = parseJwt(accessToken);
+      const u: HubbleUser = { id: payload?.sub ?? "", email };
+      setUser(u);
+      setSession({ accessToken, refreshToken });
+      return { error: null };
+    } catch (e) {
+      return { error: e instanceof Error ? e : new Error("Sign in failed") };
     }
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error ?? null };
   }, []);
 
   const signUp = useCallback(async (email: string, password: string) => {
-    if (!supabase) {
-      return {
-        error: new Error(
-          "Supabase is not configured. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to .env"
-        ) as Error,
-      };
+    try {
+      const res = await fetch(`${API_URL}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return { error: new Error(body.message || "Registration failed") };
+      }
+      const { accessToken, refreshToken } = await res.json();
+      await storeTokens(accessToken, refreshToken);
+      const payload = parseJwt(accessToken);
+      const u: HubbleUser = { id: payload?.sub ?? "", email };
+      setUser(u);
+      setSession({ accessToken, refreshToken });
+      return { error: null, data: { user: u } };
+    } catch (e) {
+      return { error: e instanceof Error ? e : new Error("Sign up failed") };
     }
-    const { data: signUpData, error } = await supabase.auth.signUp({ email, password });
-    return { error: error ?? null, data: signUpData?.user ? { user: signUpData.user } : undefined };
   }, []);
 
   const signOut = useCallback(async () => {
-    if (supabase) await supabase.auth.signOut();
+    try {
+      const { accessToken } = await getStoredTokens();
+      if (accessToken) {
+        await fetch(`${API_URL}/api/auth/logout`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }).catch(() => {});
+      }
+    } finally {
+      await clearTokens();
+      setUser(null);
+      setSession(null);
+    }
   }, []);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        isLoading,
-        isSupabaseConfigured: !!supabase,
-        signIn,
-        signUp,
-        signOut,
-      }}
-    >
+    <AuthContext.Provider value={{ user, session, isLoading, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,33 +1,5 @@
-import type { User } from "@supabase/supabase-js";
-import supabase from "./supabase";
-
-/** Slug for username: alphanumeric + underscores only, lowercase */
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_|_$/g, "") || "user";
-}
-
-/**
- * Ensure the current user has a row in profiles. Call after sign-in/sign-up.
- * Uses email prefix for display_name and a unique username (email prefix + short id).
- */
-export async function upsertProfileForUser(user: User): Promise<void> {
-  if (!supabase) return;
-  const prefix = user.email ? slugify(user.email.split("@")[0]) : "user";
-  const uniqueUsername = `${prefix}_${user.id.slice(0, 8)}`;
-  const displayName = user.email?.split("@")[0] ?? uniqueUsername;
-  await supabase.from("profiles").upsert(
-    {
-      id: user.id,
-      display_name: displayName,
-      username: uniqueUsername,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "id" }
-  );
-}
+// Type definitions for DB rows — kept for type-checking across the app.
+// The upsertProfileForUser function is now handled server-side by NestJS on register.
 
 export type ProfileRow = {
   id: string;
@@ -63,17 +35,25 @@ export type ProfileRow = {
   stripe_connect_account_id?: string | null;
   reputation_score?: number | null;
   verified_tier?: string | null;
+  email?: string | null;
+  password_hash?: string | null;
 };
 
 export type PostRow = {
   id: string;
   user_id: string;
   type: string;
+  post_type?: string;
   title: string | null;
   body: string | null;
   media_uri: string | null;
+  media_type?: string | null;
   created_at: string;
+  updated_at?: string;
   is_sponsored?: boolean;
   poll_options?: string[] | null;
   thumbnail_uri?: string | null;
+  scheduled_at?: string | null;
+  place_name?: string | null;
+  hashtags?: string[];
 };

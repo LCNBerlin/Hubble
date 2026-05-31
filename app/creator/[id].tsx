@@ -21,7 +21,7 @@ import { useAuth } from "../../context/AuthContext";
 import type { Post as PostType, Product } from "../../context/ContentContext";
 import { useContent } from "../../context/ContentContext";
 import { useProfile } from "../../context/ProfileContext";
-import { usePostLikes } from "../../hooks/usePostLikes";
+import { usePostEngagement } from "../../hooks/usePostEngagement";
 import { CREATOR_AVATAR } from "../../lib/constants";
 import supabase from "../../lib/supabase";
 import { rowToProduct } from "../../lib/supabase-products";
@@ -452,7 +452,7 @@ export default function CreatorProfileScreen() {
   }, [user?.id, id, isFollowing, follow, unfollow, profile, followLoading]);
 
   const postIds = posts.map((p) => p.id);
-  const { getState: getLikeState, toggleLike } = usePostLikes(postIds);
+  const { getEngagement, toggleLike } = usePostEngagement(postIds);
 
   const postsAsContent: PostWithDate[] = useMemo(
     () =>
@@ -521,15 +521,15 @@ export default function CreatorProfileScreen() {
         creator={{ id: id ?? "", displayName: displayNameFallback, username: usernameFallback, avatarUri: avatarUriFallback }}
         onPressCreator={() => {}}
         onLike={() => toggleLike(p.id)}
-        isLiked={getLikeState(p.id).isLiked}
-        likeCount={getLikeState(p.id).likeCount}
+        isLiked={getEngagement(p.id).isLiked}
+        likeCount={getEngagement(p.id).likeCount}
         showSave={false}
         layout="reels"
         fillContainer
         shouldPlayVideo={options.shouldPlayVideo}
       />
     ),
-    [id, displayNameFallback, usernameFallback, avatarUriFallback, toggleLike, getLikeState]
+    [id, displayNameFallback, usernameFallback, avatarUriFallback, toggleLike, getEngagement]
   );
 
   if (!id) {

@@ -25,10 +25,7 @@ import { useCart } from "../../context/CartContext";
 import type { Event, Post, PostType, Product } from "../../context/ContentContext";
 import { useContent } from "../../context/ContentContext";
 import { useProfile } from "../../context/ProfileContext";
-import { usePostCommentCounts } from "../../hooks/usePostCommentCounts";
-import { usePostDislikes } from "../../hooks/usePostDislikes";
-import { usePostLikes } from "../../hooks/usePostLikes";
-import { usePostReposts } from "../../hooks/usePostReposts";
+import { usePostEngagement } from "../../hooks/usePostEngagement";
 import { CREATOR_AVATAR } from "../../lib/constants";
 import { rowToProduct } from "../../lib/supabase-products";
 import supabase from "../../lib/supabase";
@@ -887,10 +884,7 @@ export default function ProfileScreen() {
     () => [...new Set([...myPosts.map((p) => p.id), ...(savedPosts?.map((p) => p.id) ?? [])])],
     [myPosts, savedPosts]
   );
-  const { getState: getLikeState, toggleLike } = usePostLikes(postIds);
-  const { getState: getDislikeState, toggleDislike } = usePostDislikes(postIds);
-  const { getState: getRepostState, toggleRepost } = usePostReposts(postIds);
-  const { getCommentCount, refresh: refreshCommentCounts } = usePostCommentCounts(postIds);
+  const { getEngagement, toggleLike, toggleDislike, toggleRepost, refresh: refreshEngagement } = usePostEngagement(postIds);
 
   const handleDeletePost = useCallback(
     async (postId: string) => {
@@ -1074,16 +1068,16 @@ export default function ProfileScreen() {
             updateProduct={updateProduct}
             onRequestTip={handleRequestTip}
             onCheckout={() => {}}
-            getLikeState={getLikeState}
+            getLikeState={getEngagement}
             toggleLike={toggleLike}
-            getDislikeState={getDislikeState}
+            getDislikeState={getEngagement}
             toggleDislike={toggleDislike}
-            getRepostState={getRepostState}
+            getRepostState={getEngagement}
             toggleRepost={toggleRepost}
             savedPosts={savedPosts}
             savedPostsLoading={savedPostsLoading}
-            getCommentCount={getCommentCount}
-            onCommentAdded={refreshCommentCounts}
+            getCommentCount={(id) => getEngagement(id).commentCount}
+            onCommentAdded={refreshEngagement}
             postUserId={user?.id}
             onDeletePost={handleDeletePost}
             onDeleteProduct={handleDeleteProduct}
