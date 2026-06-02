@@ -20,7 +20,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
 import { useAuth } from "../context/AuthContext";
-import { useProfile } from "../context/ProfileContext";
+import { useMyProfileQuery } from "../hooks/useProfileQuery";
 import * as Linking from "expo-linking";
 import { POST_TYPE_LABELS } from "../lib/constants";
 import { formatExactTimestamp } from "../lib/formatTimeAgo";
@@ -173,7 +173,7 @@ export function PostCard({
   shouldPlayVideo = false,
 }: PostCardProps) {
   const { user } = useAuth();
-  const { profile } = useProfile();
+  const { data: profile } = useMyProfileQuery(user?.id);
   const router = useRouter();
   const isOwnPost = !!user?.id && !!postUserId && user.id === postUserId;
   const hitSlop = { top: 12, bottom: 12, left: 12, right: 12 };
@@ -440,8 +440,8 @@ export function PostCard({
     acc[c.parent_id].push(c);
     return acc;
   }, {});
-  const displayName = profile?.displayName ?? "User";
-  const avatarUri = profile?.avatarUri ?? null;
+  const displayName = profile?.display_name ?? "User";
+  const avatarUri = profile?.avatar_url ?? null;
 
   const headerContent =
     creator != null ? (
@@ -1452,7 +1452,7 @@ export function PostCard({
               })() : null}
               {user ? (
                 <View className="flex-row items-center gap-2 px-4 py-3 border-t border-zinc-700 bg-zinc-900">
-                  <Avatar uri={profile?.avatarUri ?? null} size={COMMENT_AVATAR_SIZE} />
+                  <Avatar uri={profile?.avatar_url ?? null} size={COMMENT_AVATAR_SIZE} />
                   <TextInput
                     value={commentBody}
                     onChangeText={setCommentBody}

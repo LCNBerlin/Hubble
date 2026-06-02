@@ -4,7 +4,7 @@ import { ReactNode, useEffect, useRef } from "react";
 import { Linking, LogBox, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { addNotificationResponseListener } from "../lib/pushNotifications";
+import { addNotificationResponseListener, registerPushToken } from "../lib/pushNotifications";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,8 +24,6 @@ import {
   setStoredReferralRef,
 } from "../lib/referral";
 import { AuthProvider, useAuth } from "../context/AuthContext";
-import { CommunityProvider } from "../context/CommunityContext";
-import { NotificationsProvider } from "../context/NotificationsContext";
 import { CartProvider } from "../context/CartContext";
 import { ContentProvider } from "../context/ContentContext";
 import { ProfileProvider } from "../context/ProfileContext";
@@ -88,12 +86,19 @@ function AuthGate({ children }: { children: ReactNode }) {
 
 function PushNotificationHandler() {
   const router = useRouter();
+  const { user } = useAuth();
   useEffect(() => {
     const remove = addNotificationResponseListener(() => {
       router.push("/(tabs)/notifications");
     });
     return remove;
   }, [router]);
+  useEffect(() => {
+    if (!user?.id) return;
+    registerPushToken(user.id).catch((err) => {
+      if (__DEV__) console.warn("[push] registerPushToken failed:", err);
+    });
+  }, [user?.id]);
   return null;
 }
 
@@ -145,11 +150,7 @@ export default function RootLayout() {
                     <StripeWrapper>
                       <AuthGate>
                         <PushNotificationHandler />
-                        <CommunityProvider>
-                          <NotificationsProvider>
                             <Stack screenOptions={{ headerShown: false }} />
-                          </NotificationsProvider>
-                        </CommunityProvider>
                       </AuthGate>
                     </StripeWrapper>
                   </WishlistProvider>

@@ -26,7 +26,7 @@ import { ReportProfileModal } from "../../components/ReportProfileModal";
 import { TipModal } from "../../components/TipModal";
 import { Avatar, EmptyState } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
-import { useCommunity } from "../../context/CommunityContext";
+import { useCommunityStore } from "../../store/community-store";
 import { useProfile } from "../../context/ProfileContext";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
 import {
@@ -609,7 +609,7 @@ export default function FeedScreen() {
   const paddingVertical = 0;
   const paddingHorizontal = 0;
   const { user } = useAuth();
-  const { selectedCommunityId, selectedCommunity, setSelectedCommunityId } = useCommunity();
+  const { selectedCommunityId, selectedCommunity, setSelectedCommunityId } = useCommunityStore();
   const { savedPostIds, toggleSavePost, blockUser, blockedUserIds } = useProfile();
   const [reportTargetUserId, setReportTargetUserId] = useState<string | null>(null);
   const [hiddenPostIds, setHiddenPostIds] = useState<Set<string>>(() => new Set());

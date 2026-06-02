@@ -23,7 +23,7 @@ import { VaultBreakdownCards, type VaultKey } from "../../components/wallet/Vaul
 import { WalletRightPanel } from "../../components/wallet/WalletRightPanel";
 import { WalletSidebar, type WalletSection } from "../../components/wallet/WalletSidebar";
 import { useAuth } from "../../context/AuthContext";
-import { useProfile } from "../../context/ProfileContext";
+import { useMyProfileQuery } from "../../hooks/useProfileQuery";
 import { useCreatorPayouts } from "../../hooks/useCreatorPayouts";
 import { useOrdersForWallet } from "../../hooks/useOrdersForWallet";
 import { useWalletLayout } from "../../lib/wallet-grid";
@@ -44,7 +44,7 @@ export default function WalletScreen() {
   const { width } = useWindowDimensions();
   const layout = useWalletLayout(width);
   const { user } = useAuth();
-  const { profile } = useProfile();
+  const { data: profile } = useMyProfileQuery(user?.id);
   const { orders, loading, refresh } = useOrdersForWallet(user?.id);
   const { payouts, refresh: refreshPayouts } = useCreatorPayouts(user?.id);
 
@@ -214,8 +214,8 @@ export default function WalletScreen() {
     if (activeSection === "crypto") {
       return (
         <CryptoVaultView
-          walletAddress={profile.walletAddress || null}
-          ensName={profile.ensName || null}
+          walletAddress={profile?.wallet_address || null}
+          ensName={profile?.ens_name || null}
         />
       );
     }

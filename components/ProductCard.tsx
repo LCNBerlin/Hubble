@@ -8,7 +8,8 @@ import { Avatar } from "./ui";
 import { useCart } from "../context/CartContext";
 import type { Product } from "../context/ContentContext";
 import { useContent } from "../context/ContentContext";
-import { useProfile } from "../context/ProfileContext";
+import { useAuth } from "../context/AuthContext";
+import { useMyProfileQuery } from "../hooks/useProfileQuery";
 import { useWishlist } from "../context/WishlistContext";
 import { formatCentsToPrice, parsePriceToCents } from "../lib/payments";
 
@@ -88,7 +89,8 @@ export function ProductCard({
   onShowStats,
 }: ProductCardProps) {
   const router = useRouter();
-  const { profile } = useProfile();
+  const { user } = useAuth();
+  const { data: profile } = useMyProfileQuery(user?.id);
   const { addToCart } = useCart();
   const { getReviewsForProduct } = useContent();
   const { isInWishlist, toggleWishlist } = useWishlist();
