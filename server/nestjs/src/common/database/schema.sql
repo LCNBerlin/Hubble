@@ -21,6 +21,14 @@ CREATE TABLE IF NOT EXISTS blocked_users (
   UNIQUE(blocker_id, blocked_id)
 );
 
+CREATE TABLE IF NOT EXISTS reports (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  reporter_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  reported_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  reason varchar NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- ─────────────────────────────────────────────
 -- POSTS & CONTENT
 -- ─────────────────────────────────────────────

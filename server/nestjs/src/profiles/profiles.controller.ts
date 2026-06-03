@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Delete, Param, Body, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Patch, Post, Delete, Param, Body, Query, UseGuards, HttpCode } from "@nestjs/common";
 import { ProfilesService } from "./profiles.service";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { CurrentUser, JwtUser } from "../common/decorators/current-user.decorator";
@@ -114,5 +114,11 @@ export class ProfilesController {
   @Get(":id/follow-status")
   followStatus(@CurrentUser() user: JwtUser, @Param("id") targetId: string) {
     return this.profiles.isFollowing(user.sub, targetId).then((isFollowing) => ({ isFollowing }));
+  }
+
+  @Post(":id/report")
+  @HttpCode(204)
+  report(@CurrentUser() user: JwtUser, @Param("id") reportedId: string, @Body() body: { reason: string }) {
+    return this.profiles.reportUser(user.sub, reportedId, body.reason);
   }
 }

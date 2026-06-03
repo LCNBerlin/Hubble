@@ -170,4 +170,11 @@ export class ProfilesService {
       [`%${query}%`, limit]
     );
   }
+
+  async reportUser(reporterId: string, reportedId: string, reason: string): Promise<void> {
+    await this.dataSource.query(
+      `INSERT INTO reports (reporter_id, reported_id, reason) VALUES ($1, $2, $3)`,
+      [reporterId, reportedId, reason]
+    );
+  }
 }
