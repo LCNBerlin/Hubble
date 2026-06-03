@@ -7,9 +7,14 @@ export class PostsService {
 
   async getByUser(userId: string, viewerId?: string): Promise<unknown[]> {
     return this.db.query(
-      `SELECT p.*, pr.username, pr.display_name, pr.avatar_url, pr.verified_tier
-       FROM posts p JOIN profiles pr ON pr.id = p.user_id
+      `SELECT p.*, pr.username, pr.display_name, pr.avatar_url, pr.verified_tier,
+        COALESCE(ARRAY_AGG(h.name ORDER BY h.name) FILTER (WHERE h.name IS NOT NULL), ARRAY[]::varchar[]) AS hashtags
+       FROM posts p
+       JOIN profiles pr ON pr.id = p.user_id
+       LEFT JOIN post_hashtags ph ON ph.post_id = p.id
+       LEFT JOIN hashtags h ON h.id = ph.hashtag_id
        WHERE p.user_id = $1 AND (p.scheduled_at IS NULL OR p.scheduled_at <= NOW())
+       GROUP BY p.id, pr.username, pr.display_name, pr.avatar_url, pr.verified_tier
        ORDER BY p.created_at DESC`,
       [userId]
     );
