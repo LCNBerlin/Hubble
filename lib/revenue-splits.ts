@@ -57,3 +57,7 @@ export async function deleteRevenueSplit(splitId: string, _ownerId: string): Pro
     return { ok: false, error: e instanceof Error ? e.message : "Failed" };
   }
 }
+
+export async function deleteRevenueSplitsByTarget(targetType: "post" | "product", targetId: string): Promise<void> {
+  await apiDelete(`/revenue-splits/by-target?targetType=${targetType}&targetId=${encodeURIComponent(targetId)}`);
+}

@@ -20,9 +20,9 @@ import type { PriceTier, ProductType, ServiceSlot } from "../../lib/product-type
 import { useUpdateProductMutation, useDeleteProductMutation } from "../../hooks/useProductsQuery";
 import { useMyProfileQuery } from "../../hooks/useProfileQuery";
 import { useSaveTagsMutation } from "../../hooks/useProfileMutations";
-import { createRevenueSplit, getProfileIdByUsername, getRevenueSplitsForOwner } from "../../lib/revenue-splits";
-import { productToRow, rowToProduct } from "../../lib/supabase-products";
-import supabase from "../../lib/supabase";
+import { createRevenueSplit, deleteRevenueSplitsByTarget, getProfileIdByUsername, getRevenueSplitsForOwner } from "../../lib/revenue-splits";
+import { rowToProduct } from "../../lib/supabase-products";
+import { apiGet } from "../../lib/api";
 
 const PRODUCT_CATEGORIES = [
   "Art",
@@ -93,51 +93,49 @@ export default function EditProductScreen() {
   const [revenueSplits, setRevenueSplits] = useState<{ partnerUsername: string; splitPercent: string }[]>([]);
 
   const fetchProduct = useCallback(async () => {
-    if (!supabase || !id || !user?.id) {
+    if (!id || !user?.id) {
       setLoading(false);
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase.from("products").select("*").eq("id", id).single();
-    if (error || !data) {
+    try {
+      const row = await apiGet<Record<string, unknown>>(`/products/${id}`);
+      if (row.creator_id !== user.id) {
+        setProduct(null);
+        return;
+      }
+      const p = rowToProduct(row as Parameters<typeof rowToProduct>[0]);
+      setProduct(p);
+      setTitle(p.title ?? "");
+      setDescription(p.description ?? "");
+      setPrice(p.price ?? "");
+      setMediaUri(p.mediaUri ?? null);
+      setCoverImageUri(p.coverUri ?? null);
+      setInterval(
+        p.interval === "monthly" ? "monthly" : p.interval === "yearly" ? "yearly" : ""
+      );
+      setPriceTiers(Array.isArray(p.priceTiers) ? p.priceTiers : []);
+      setServiceSlots(Array.isArray(p.serviceSlots) ? p.serviceSlots : []);
+      setEventDateInput(
+        p.eventDate ? new Date(p.eventDate).toISOString().slice(0, 10) : ""
+      );
+      setEventTimeInput(p.eventTime ?? "");
+      setCategories(Array.isArray(p.categories) ? p.categories : []);
+      setTags(Array.isArray(p.tags) ? p.tags : []);
+      setMediaMimeType(p.mediaMimeType ?? null);
+      const allSplits = await getRevenueSplitsForOwner(user.id, "product");
+      const forThis = (allSplits ?? []).filter((s) => s.target_id === p.id);
+      setRevenueSplits(
+        forThis.map((s) => ({
+          partnerUsername: (s.partner as { username?: string })?.username ?? "",
+          splitPercent: String(s.split_percent),
+        }))
+      );
+    } catch {
       setProduct(null);
+    } finally {
       setLoading(false);
-      return;
     }
-    const row = data as Record<string, unknown>;
-    if (row.creator_id !== user.id) {
-      setProduct(null);
-      setLoading(false);
-      return;
-    }
-    const p = rowToProduct(row as Parameters<typeof rowToProduct>[0]);
-    setProduct(p);
-    setTitle(p.title ?? "");
-    setDescription(p.description ?? "");
-    setPrice(p.price ?? "");
-    setMediaUri(p.mediaUri ?? null);
-    setCoverImageUri(p.coverUri ?? null);
-    setInterval(
-      p.interval === "monthly" ? "monthly" : p.interval === "yearly" ? "yearly" : ""
-    );
-    setPriceTiers(Array.isArray(p.priceTiers) ? p.priceTiers : []);
-    setServiceSlots(Array.isArray(p.serviceSlots) ? p.serviceSlots : []);
-    setEventDateInput(
-      p.eventDate ? new Date(p.eventDate).toISOString().slice(0, 10) : ""
-    );
-    setEventTimeInput(p.eventTime ?? "");
-    setCategories(Array.isArray(p.categories) ? p.categories : []);
-    setTags(Array.isArray(p.tags) ? p.tags : []);
-    setMediaMimeType(p.mediaMimeType ?? null);
-    const allSplits = await getRevenueSplitsForOwner(user.id, "product");
-    const forThis = (allSplits ?? []).filter((s) => s.target_id === p.id);
-    setRevenueSplits(
-      forThis.map((s) => ({
-        partnerUsername: (s.partner as { username?: string })?.username ?? "",
-        splitPercent: String(s.split_percent),
-      }))
-    );
-    setLoading(false);
   }, [id, user?.id]);
 
   useEffect(() => {
@@ -196,7 +194,7 @@ export default function EditProductScreen() {
   const totalSplitPercent = revenueSplits.reduce((sum, s) => sum + (parseInt(s.splitPercent, 10) || 0), 0);
 
   const handleSave = async () => {
-    if (!product || !user?.id || !supabase) return;
+    if (!product || !user?.id) return;
     if (!title.trim()) {
       Alert.alert("Missing title", "Please enter a product title.");
       return;
@@ -210,40 +208,6 @@ export default function EditProductScreen() {
       Alert.alert("File required", "Please set the digital file for delivery.");
       return;
     }
-    setSaving(true);
-    let eventDate: number | undefined;
-    if (product.type === "event" && eventDateInput.trim()) {
-      const ts = new Date(eventDateInput.trim()).getTime();
-      if (!isNaN(ts)) eventDate = ts;
-    }
-    const finalCategories = categories.filter((c) => c !== "Custom").slice(0, MAX_CATEGORIES);
-    const payload = {
-      ...product,
-      title: title.trim(),
-      description: description.trim() || undefined,
-      price: price.trim() || undefined,
-      mediaUri: mediaUri ?? undefined,
-      coverUri: isDigital ? (coverImageUri ?? undefined) : undefined,
-      mediaMimeType: mediaMimeType ?? undefined,
-      interval: product.type === "membership" && interval ? interval : undefined,
-      priceTiers: priceTiers.length > 0 ? priceTiers : undefined,
-      serviceSlots: serviceSlots.length > 0 ? serviceSlots : undefined,
-      eventDate,
-      eventTime: product.type === "event" && eventTimeInput.trim() ? eventTimeInput.trim() : undefined,
-      categories: finalCategories.length > 0 ? finalCategories : undefined,
-      tags: tags.length > 0 ? tags : undefined,
-    };
-    const row = productToRow(payload, user.id);
-    const { error } = await supabase
-      .from("products")
-      .update(row)
-      .eq("id", product.id)
-      .eq("creator_id", user.id);
-    if (error) {
-      setSaving(false);
-      Alert.alert("Error", error.message || "Could not update product.");
-      return;
-    }
     const parsedSplits = revenueSplits
       .map((s) => ({
         partnerUsername: s.partnerUsername.trim(),
@@ -251,66 +215,68 @@ export default function EditProductScreen() {
       }))
       .filter((s) => s.partnerUsername && s.splitPercent >= 1 && s.splitPercent <= 99);
     if (parsedSplits.length > 0 && parsedSplits.reduce((sum, s) => sum + s.splitPercent, 0) > 99) {
-      setSaving(false);
       Alert.alert("Invalid splits", "Total partner share cannot exceed 99%.");
       return;
     }
-    await supabase
-      .from("revenue_splits")
-      .delete()
-      .eq("owner_id", user.id)
-      .eq("target_type", "product")
-      .eq("target_id", product.id);
-    for (const s of parsedSplits) {
-      const partnerId = await getProfileIdByUsername(s.partnerUsername);
-      if (partnerId) {
-        await createRevenueSplit({
-          ownerId: user.id,
-          partnerId,
-          targetType: "product",
-          targetId: product.id,
-          splitPercent: s.splitPercent,
-        });
+    setSaving(true);
+    try {
+      let eventDate: number | undefined;
+      if (product.type === "event" && eventDateInput.trim()) {
+        const ts = new Date(eventDateInput.trim()).getTime();
+        if (!isNaN(ts)) eventDate = ts;
       }
+      const finalCategories = categories.filter((c) => c !== "Custom").slice(0, MAX_CATEGORIES);
+      const updates = {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        price: price.trim() || undefined,
+        mediaUri: mediaUri ?? undefined,
+        coverUri: isDigital ? (coverImageUri ?? undefined) : undefined,
+        mediaMimeType: mediaMimeType ?? undefined,
+        interval: product.type === "membership" && interval ? interval : undefined,
+        priceTiers: priceTiers.length > 0 ? priceTiers : undefined,
+        serviceSlots: serviceSlots.length > 0 ? serviceSlots : undefined,
+        eventDate,
+        eventTime: product.type === "event" && eventTimeInput.trim() ? eventTimeInput.trim() : undefined,
+        categories: finalCategories.length > 0 ? finalCategories : undefined,
+        tags: tags.length > 0 ? tags : undefined,
+      };
+      await updateProductMutation.mutateAsync({ id: product.id, updates });
+      await deleteRevenueSplitsByTarget("product", product.id);
+      for (const s of parsedSplits) {
+        const partnerId = await getProfileIdByUsername(s.partnerUsername);
+        if (partnerId) {
+          await createRevenueSplit({
+            ownerId: user.id,
+            partnerId,
+            targetType: "product",
+            targetId: product.id,
+            splitPercent: s.splitPercent,
+          });
+        }
+      }
+      router.back();
+    } catch (err) {
+      Alert.alert("Error", err instanceof Error ? err.message : "Could not update product.");
+    } finally {
+      setSaving(false);
     }
-    updateProductMutation.mutate({ id: product.id, updates: {
-      title: payload.title,
-      description: payload.description,
-      price: payload.price,
-      mediaUri: payload.mediaUri,
-      coverUri: payload.coverUri,
-      mediaMimeType: payload.mediaMimeType,
-      interval: payload.interval,
-      priceTiers: payload.priceTiers,
-      serviceSlots: payload.serviceSlots,
-      eventDate: payload.eventDate,
-      eventTime: payload.eventTime,
-      categories: payload.categories,
-      tags: payload.tags,
-    } });
-    setSaving(false);
-    router.back();
   };
 
   const handleDelete = () => {
-    if (!product || !user?.id || !supabase) return;
+    if (!product || !user?.id) return;
     Alert.alert("Delete product?", "This cannot be undone.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          const { error } = await supabase
-            .from("products")
-            .delete()
-            .eq("id", product.id)
-            .eq("creator_id", user.id);
-          if (error) {
+          try {
+            await deleteProductMutation.mutateAsync(product.id);
+            router.replace("/(tabs)/profile");
+          } catch {
             Alert.alert("Error", "Could not delete product.");
-            return;
           }
-          deleteProductMutation.mutate(product.id);
-          router.replace("/(tabs)/profile");
         },
       },
     ]);
