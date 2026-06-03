@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -27,7 +27,6 @@ import { useMyProfileQuery } from "../../hooks/useProfileQuery";
 import { useCreatorPayouts } from "../../hooks/useCreatorPayouts";
 import { useOrdersForWallet } from "../../hooks/useOrdersForWallet";
 import { useWalletLayout } from "../../lib/wallet-grid";
-import supabase from "../../lib/supabase";
 import type { OrderWithItems } from "../../hooks/useOrdersForWallet";
 
 const MOBILE_TABS: { key: WalletSection; label: string }[] = [
@@ -48,36 +47,19 @@ export default function WalletScreen() {
   const { orders, loading, refresh } = useOrdersForWallet(user?.id);
   const { payouts, refresh: refreshPayouts } = useCreatorPayouts(user?.id);
 
+  const stripeConnectAccountId = profile?.stripe_connect_account_id ?? null;
+
   const [activeSection, setActiveSection] = useState<WalletSection>("overview");
   const [selectedOrder, setSelectedOrder] = useState<OrderWithItems | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
   const [securityVisible, setSecurityVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [stripeConnectAccountId, setStripeConnectAccountId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user?.id || !supabase) return;
-    supabase
-      .from("profiles")
-      .select("stripe_connect_account_id")
-      .eq("id", user.id)
-      .single()
-      .then(({ data }) => setStripeConnectAccountId(data?.stripe_connect_account_id ?? null));
-  }, [user?.id]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([refresh(), refreshPayouts()]);
-    if (user?.id && supabase) {
-      const { data } = await supabase
-        .from("profiles")
-        .select("stripe_connect_account_id")
-        .eq("id", user.id)
-        .single();
-      setStripeConnectAccountId(data?.stripe_connect_account_id ?? null);
-    }
     setRefreshing(false);
-  }, [refresh, refreshPayouts, user?.id]);
+  }, [refresh, refreshPayouts]);
 
   const totals = useMemo(() => {
     const lockedCents = orders
