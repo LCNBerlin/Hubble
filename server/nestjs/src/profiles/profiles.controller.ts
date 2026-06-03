@@ -10,6 +10,9 @@ class UpdateProfileDto {
   @IsOptional() @IsString() bio?: string;
   @IsOptional() @IsUrl() avatarUrl?: string;
   @IsOptional() @IsUrl() bannerUrl?: string;
+  @IsOptional() @IsString() location?: string;
+  @IsOptional() lat?: number | null;
+  @IsOptional() lng?: number | null;
 }
 
 @Controller("profiles")
