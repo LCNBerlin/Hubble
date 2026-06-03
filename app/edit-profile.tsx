@@ -14,7 +14,8 @@ import {
   View,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
-import { useProfile } from "../context/ProfileContext";
+import { useMyProfileQuery } from "../hooks/useProfileQuery";
+import { useUpdateAvatarMutation } from "../hooks/useProfileMutations";
 import { CREATOR_AVATAR } from "../lib/constants";
 import {
   getCurrentPositionAsync,
@@ -22,12 +23,13 @@ import {
   Accuracy as LocationAccuracy,
 } from "../lib/location";
 import { pickBannerImage, pickProfileImage, uploadProfileImage } from "../lib/profileUpload";
-import supabase from "../lib/supabase";
+import { apiPatch } from "../lib/api";
 
 export default function EditProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { profile, refetchProfile, updateAvatar } = useProfile();
+  const { data: myProfile, refetch: refetchProfile } = useMyProfileQuery(user?.id);
+  const updateAvatarMutation = useUpdateAvatarMutation();
 
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
@@ -43,18 +45,18 @@ export default function EditProfileScreen() {
   const [bannerUploading, setBannerUploading] = useState(false);
 
   useEffect(() => {
-    setDisplayName(profile.displayName ?? "");
-    setUsername(profile.username ?? "");
-    setBio(profile.bio ?? "");
-    setLocation(profile.location ?? "");
-    setLat(profile.lat ?? null);
-    setLng(profile.lng ?? null);
-    setAvatarUri(profile.avatarUri ?? null);
-    setBannerUri(profile.bannerUri ?? null);
-  }, [profile.displayName, profile.username, profile.bio, profile.location, profile.lat, profile.lng, profile.avatarUri, profile.bannerUri]);
+    setDisplayName(myProfile?.display_name ?? "");
+    setUsername(myProfile?.username ?? "");
+    setBio(myProfile?.bio ?? "");
+    setLocation(myProfile?.location ?? "");
+    setLat(myProfile?.lat ?? null);
+    setLng(myProfile?.lng ?? null);
+    setAvatarUri(myProfile?.avatar_url ?? null);
+    setBannerUri(myProfile?.banner_url ?? null);
+  }, [myProfile?.display_name, myProfile?.username, myProfile?.bio, myProfile?.location, myProfile?.lat, myProfile?.lng, myProfile?.avatar_url, myProfile?.banner_url]);
 
   const handleSave = useCallback(async () => {
-    if (!user?.id || !supabase) return;
+    if (!user?.id) return;
     const trimmedDisplay = displayName.trim();
     const trimmedUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^_|_$/g, "") || "user";
     const trimmedBio = bio.trim();
@@ -65,39 +67,35 @@ export default function EditProfileScreen() {
       return;
     }
 
-    // Avoid saving while avatar/banner uploads are in-flight to prevent partial state.
     if (avatarUploading || bannerUploading) {
       Alert.alert("Please wait", "Profile photo or banner is still uploading. Try saving again in a moment.");
       return;
     }
 
     setSaving(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        display_name: trimmedDisplay || null,
+    try {
+      await apiPatch("/profiles/me", {
+        displayName: trimmedDisplay || null,
         username: trimmedUsername,
         bio: trimmedBio || null,
         location: trimmedLocation || null,
         lat: lat ?? null,
         lng: lng ?? null,
-        avatar_url: avatarUri || null,
-        banner_url: bannerUri || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", user.id);
-
-    setSaving(false);
-    if (error) {
-      if (error.code === "23505") {
+        avatarUrl: avatarUri || null,
+        bannerUrl: bannerUri || null,
+      });
+      await refetchProfile();
+      router.back();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Could not save profile.";
+      if (msg.includes("23505") || msg.toLowerCase().includes("username")) {
         Alert.alert("Username taken", "That username is already in use. Try another.");
       } else {
-        Alert.alert("Error", error.message || "Could not save profile.");
+        Alert.alert("Error", msg);
       }
-      return;
+    } finally {
+      setSaving(false);
     }
-    await refetchProfile();
-    router.back();
   }, [user?.id, displayName, username, bio, location, lat, lng, avatarUri, bannerUri, avatarUploading, bannerUploading, refetchProfile, router]);
 
   const handleChangeAvatar = useCallback(async () => {
@@ -105,15 +103,15 @@ export default function EditProfileScreen() {
     if (!picked) return;
     setAvatarUploading(true);
     try {
-      const url = await updateAvatar(picked.base64, picked.mimeType);
-      setAvatarUri(url);
+      const url = await updateAvatarMutation.mutateAsync({ base64: picked.base64, mimeType: picked.mimeType ?? undefined });
+      if (url) setAvatarUri(url);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Could not upload profile picture.";
       Alert.alert("Upload failed", message);
     } finally {
       setAvatarUploading(false);
     }
-  }, [updateAvatar]);
+  }, [updateAvatarMutation]);
 
   const handleChangeBanner = useCallback(async () => {
     if (!user?.id) return;

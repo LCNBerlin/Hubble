@@ -20,6 +20,24 @@ export function useMyProfileQuery(userId: string | undefined) {
   });
 }
 
+export function useFollowStatusQuery(userId: string | undefined, viewedUserId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["follow-status", viewedUserId],
+    queryFn: () => apiGet<{ isFollowing: boolean }>(`/profiles/${viewedUserId}/follow-status`),
+    enabled: !!userId && !!viewedUserId && userId !== viewedUserId,
+    staleTime: 30_000,
+  });
+}
+
+export function useSavedDataQuery(userId: string | undefined) {
+  return useQuery({
+    queryKey: ["saved-data", userId],
+    queryFn: () => apiGet<{ postIds: string[]; productIds: string[]; blockedIds: string[] }>("/profiles/me/saved"),
+    enabled: !!userId,
+    staleTime: 30_000,
+  });
+}
+
 export function useUpdateProfileMutation() {
   const qc = useQueryClient();
   return useMutation({

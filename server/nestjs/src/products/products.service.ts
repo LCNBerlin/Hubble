@@ -26,9 +26,44 @@ export class ProductsService {
 
   async create(creatorId: string, data: Record<string, unknown>): Promise<unknown> {
     const rows = await this.db.query(
-      `INSERT INTO products (creator_id, title, description, price_cents, product_type, media_url, thumbnail_url, is_published)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [creatorId, data.title, data.description, data.priceCents ?? 0, data.productType ?? "digital", data.mediaUrl || null, data.thumbnailUrl || null, data.isPublished ?? true]
+      `INSERT INTO products (
+        creator_id, type, title, description, price, currency, media_uri, media_mime_type,
+        cover_uri, price_tiers, interval, pinned, is_sponsored, inventory_status, stock_quantity,
+        delivery_type, escrow_required, service_slots, event_date, event_time, variants, chain,
+        is_wholesale, token_gated, category, categories, tags, go_live_at
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26::text[],$27::text[],$28
+      ) RETURNING *`,
+      [
+        creatorId,
+        data.type ?? "digital",
+        data.title,
+        data.description ?? null,
+        data.price ?? 0,
+        data.currency ?? "usd",
+        data.media_uri ?? null,
+        data.media_mime_type ?? null,
+        data.cover_uri ?? null,
+        data.price_tiers != null ? JSON.stringify(data.price_tiers) : null,
+        data.interval ?? null,
+        data.pinned ?? false,
+        data.is_sponsored ?? false,
+        data.inventory_status ?? "in_stock",
+        data.stock_quantity ?? null,
+        data.delivery_type ?? "instant",
+        data.escrow_required ?? false,
+        data.service_slots != null ? JSON.stringify(data.service_slots) : null,
+        data.event_date ?? null,
+        data.event_time ?? null,
+        data.variants != null ? JSON.stringify(data.variants) : null,
+        data.chain ?? null,
+        data.is_wholesale ?? false,
+        data.token_gated ?? false,
+        data.category ?? null,
+        Array.isArray(data.categories) ? data.categories : null,
+        Array.isArray(data.tags) ? data.tags : null,
+        data.go_live_at ?? null,
+      ]
     );
     return rows[0];
   }
@@ -71,6 +106,16 @@ export class ProductsService {
       [productId, userId, rating, body ?? null]
     );
     return rows[0];
+  }
+
+  async getCrossSell(creatorId: string, productType: string, excludeId: string, limit = 6): Promise<unknown[]> {
+    return this.db.query(
+      `SELECT p.*, pr.username, pr.display_name, pr.avatar_url
+       FROM products p JOIN profiles pr ON pr.id = p.creator_id
+       WHERE (p.creator_id = $1 OR p.type = $2) AND p.id != $3
+       ORDER BY p.created_at DESC LIMIT $4`,
+      [creatorId, productType, excludeId, limit]
+    );
   }
 
   async search(query: string, limit = 20): Promise<unknown[]> {

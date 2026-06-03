@@ -10,19 +10,19 @@ export class ProfilesService {
     private dataSource: DataSource
   ) {}
 
-  async findById(id: string): Promise<Profile> {
-    const p = await this.profiles.findOne({ where: { id } });
-    if (!p) throw new NotFoundException("Profile not found");
-    return p;
+  async findById(id: string): Promise<unknown> {
+    const rows = await this.dataSource.query(`SELECT * FROM profiles WHERE id = $1`, [id]);
+    if (!rows[0]) throw new NotFoundException("Profile not found");
+    return rows[0];
   }
 
-  async findByUsername(username: string): Promise<Profile> {
-    const p = await this.profiles.findOne({ where: { username } });
-    if (!p) throw new NotFoundException("Profile not found");
-    return p;
+  async findByUsername(username: string): Promise<unknown> {
+    const rows = await this.dataSource.query(`SELECT * FROM profiles WHERE username = $1`, [username]);
+    if (!rows[0]) throw new NotFoundException("Profile not found");
+    return rows[0];
   }
 
-  async update(id: string, data: Partial<Profile>): Promise<Profile> {
+  async update(id: string, data: Partial<Profile>): Promise<unknown> {
     await this.profiles.update(id, { ...data, updatedAt: new Date() });
     return this.findById(id);
   }
@@ -115,6 +115,28 @@ export class ProfilesService {
     return rows.map((r: { product_id: string }) => r.product_id);
   }
 
+  async getSavedPosts(userId: string): Promise<unknown[]> {
+    return this.dataSource.query(
+      `SELECT p.id, p.type, p.title, p.body, p.media_uri, p.thumbnail_uri
+       FROM saved_posts sp
+       JOIN posts p ON p.id = sp.post_id
+       WHERE sp.user_id = $1
+       ORDER BY sp.created_at DESC`,
+      [userId]
+    );
+  }
+
+  async getSavedProducts(userId: string): Promise<unknown[]> {
+    return this.dataSource.query(
+      `SELECT p.*
+       FROM saved_products sp
+       JOIN products p ON p.id = sp.product_id
+       WHERE sp.user_id = $1
+       ORDER BY sp.created_at DESC`,
+      [userId]
+    );
+  }
+
   async toggleSavePost(userId: string, postId: string): Promise<{ saved: boolean }> {
     const existing = await this.dataSource.query(`SELECT 1 FROM saved_posts WHERE user_id = $1 AND post_id = $2`, [userId, postId]);
     if (existing[0]) {
@@ -146,6 +168,13 @@ export class ProfilesService {
        WHERE username ILIKE $1 OR display_name ILIKE $1
        ORDER BY followers_count DESC LIMIT $2`,
       [`%${query}%`, limit]
+    );
+  }
+
+  async reportUser(reporterId: string, reportedId: string, reason: string): Promise<void> {
+    await this.dataSource.query(
+      `INSERT INTO reports (reporter_id, reported_id, reason) VALUES ($1, $2, $3)`,
+      [reporterId, reportedId, reason]
     );
   }
 }

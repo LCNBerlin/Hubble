@@ -21,16 +21,12 @@ import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
-import { useCart } from "../../context/CartContext";
-import {
-    useContent,
-    type Product,
-    type ProductReview,
-    type ProductVariant,
-} from "../../context/ContentContext";
-import { useWishlist } from "../../context/WishlistContext";
-import supabase from "../../lib/supabase";
+import type { Product, ProductReview, ProductVariant } from "../../lib/product-types";
+import { useAddToCartMutation, useRemoveFromCartMutation } from "../../hooks/useCartQuery";
+import { useWishlistQuery, useToggleWishlistMutation } from "../../hooks/useWishlistQuery";
+import { useProductQuery, useProductReviewsQuery, useUpdateProductMutation, useDeleteProductMutation, useAddProductReviewMutation } from "../../hooks/useProductsQuery";
 import { rowToProduct } from "../../lib/supabase-products";
+import { apiGet } from "../../lib/api";
 import type { ProfileRow } from "../../lib/supabase-profiles";
 import { addViewedProduct } from "../../lib/viewed-products";
 
@@ -69,61 +65,29 @@ export default function ProductScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { user } = useAuth();
-  const {
-    products,
-    updateProduct,
-    deleteProduct,
-    getReviewsForProduct,
-    addProductReview,
-    loadReviewsForProduct,
-  } = useContent();
-  const { addToCart, removeFromCart } = useCart();
-  const { isInWishlist, toggleWishlist } = useWishlist();
+  const { data: product } = useProductQuery(id);
+  const { data: reviews = [] } = useProductReviewsQuery(id);
+  const updateProductMutation = useUpdateProductMutation();
+  const deleteProductMutation = useDeleteProductMutation();
+  const addReviewMutation = useAddProductReviewMutation();
+  const addToCartMutation = useAddToCartMutation();
+  const removeFromCartMutation = useRemoveFromCartMutation();
+  const { data: wishlistItems = [] } = useWishlistQuery();
+  const toggleWishlistMutation = useToggleWishlistMutation();
+  const isInWishlist = wishlistItems.some((p) => p.id === id);
 
-  const [productFromServer, setProductFromServer] = useState<Product | null>(null);
   const [crossSellProducts, setCrossSellProducts] = useState<Product[]>([]);
-  const product = useMemo(
-    () => productFromServer ?? products.find((p) => p.id === id),
-    [productFromServer, products, id]
-  );
-  const reviews = useMemo(() => (id ? getReviewsForProduct(id) : []), [id, getReviewsForProduct]);
   const [creatorProfile, setCreatorProfile] = useState<ProfileRow | null>(null);
 
   useEffect(() => {
-    if (!id || !supabase) return;
-    supabase
-      .from("products")
-      .select("*")
-      .eq("id", id)
-      .single()
-      .then(({ data }) => {
-        if (data) setProductFromServer(rowToProduct(data as Parameters<typeof rowToProduct>[0]));
-        else setProductFromServer(null);
-      })
-      .catch(() => setProductFromServer(null));
-  }, [id]);
-
-  useEffect(() => {
-    if (id) loadReviewsForProduct(id);
-  }, [id, loadReviewsForProduct]);
-
-  useEffect(() => {
-    if (!product?.creatorId || !product?.id || !product?.type || !supabase) {
+    if (!product?.creatorId || !product?.id || !product?.type) {
       setCrossSellProducts([]);
       return;
     }
-    supabase
-      .from("products")
-      .select("*")
-      .or(`creator_id.eq.${product.creatorId},type.eq.${product.type}`)
-      .neq("id", product.id)
-      .order("created_at", { ascending: false })
-      .limit(6)
-      .then(({ data }) => {
-        if (data) {
-          setCrossSellProducts(data.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-        } else setCrossSellProducts([]);
-      })
+    apiGet<Record<string, unknown>[]>(
+      `/products/cross-sell?creatorId=${product.creatorId}&type=${encodeURIComponent(product.type)}&excludeId=${product.id}`
+    )
+      .then((data) => setCrossSellProducts(data.map((row) => rowToProduct(row as Parameters<typeof rowToProduct>[0]))))
       .catch(() => setCrossSellProducts([]));
   }, [product?.id, product?.creatorId, product?.type]);
 
@@ -143,13 +107,10 @@ export default function ProductScreen() {
   const outOfStock = inventoryStatus === "out_of_stock";
 
   useEffect(() => {
-    if (!product?.creatorId || !supabase) return;
-    supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", product.creatorId)
-      .single()
-      .then(({ data }) => setCreatorProfile(data as ProfileRow | null));
+    if (!product?.creatorId) return;
+    apiGet<ProfileRow>(`/profiles/${product.creatorId}`)
+      .then((data) => setCreatorProfile(data))
+      .catch(() => setCreatorProfile(null));
   }, [product?.creatorId]);
 
   const crossSell = crossSellProducts;
@@ -159,38 +120,38 @@ export default function ProductScreen() {
     setAiDescriptionLoading(true);
     await new Promise((r) => setTimeout(r, 800));
     const stub = `AI-generated description for ${product.title}. Great quality and value.`;
-    updateProduct(product.id, { description: stub });
+    updateProductMutation.mutate({ id: product.id, updates: { description: stub } });
     setAiDescriptionLoading(false);
-  }, [product, isCreator, updateProduct]);
+  }, [product, isCreator, updateProductMutation]);
 
   const handleSuggestPrice = useCallback(async () => {
     if (!product || !isCreator) return;
     setAiPriceLoading(true);
     await new Promise((r) => setTimeout(r, 600));
-    updateProduct(product.id, { price: "$19.99" });
+    updateProductMutation.mutate({ id: product.id, updates: { price: "$19.99" } });
     setAiPriceLoading(false);
-  }, [product, isCreator, updateProduct]);
+  }, [product, isCreator, updateProductMutation]);
 
   const handleSaveDescription = useCallback(() => {
     if (product && editDescription.trim()) {
-      updateProduct(product.id, { description: editDescription.trim() });
+      updateProductMutation.mutate({ id: product.id, updates: { description: editDescription.trim() } });
       setEditingDescription(false);
     }
-  }, [product, editDescription, updateProduct]);
+  }, [product, editDescription, updateProductMutation]);
 
   const handleSubmitReview = useCallback(() => {
     if (!id || !user?.id || reviewRating < 1) return;
     setSubmittingReview(true);
-    addProductReview({ productId: id, userId: user.id, rating: reviewRating, body: reviewBody.trim() || undefined });
+    addReviewMutation.mutate({ productId: id, rating: reviewRating, body: reviewBody.trim() || undefined });
     setReviewRating(0);
     setReviewBody("");
     setSubmittingReview(false);
-  }, [id, user?.id, reviewRating, reviewBody, addProductReview]);
+  }, [id, user?.id, reviewRating, reviewBody, addReviewMutation]);
 
   const handleAddToCart = useCallback(() => {
     if (!product || outOfStock) return;
-    addToCart(product, 1, selectedTierIndex);
-  }, [product, outOfStock, addToCart, selectedTierIndex]);
+    addToCartMutation.mutate({ product, quantity: 1, selectedTierIndex });
+  }, [product, outOfStock, addToCartMutation, selectedTierIndex]);
 
   const handleShare = useCallback(async () => {
     if (!product?.id) return;
@@ -215,14 +176,14 @@ export default function ProductScreen() {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          if (isInWishlist(product.id)) toggleWishlist(product);
-          removeFromCart(product.id);
-          deleteProduct(id);
+          if (isInWishlist) toggleWishlistMutation.mutate(product);
+          removeFromCartMutation.mutate(product.id);
+          deleteProductMutation.mutate(id);
           router.replace("/(tabs)/marketplace");
         },
       },
     ]);
-  }, [product, id, isInWishlist, toggleWishlist, removeFromCart, deleteProduct, router]);
+  }, [product, id, isInWishlist, toggleWishlistMutation, removeFromCartMutation, deleteProductMutation, router]);
 
   // Derived values for preview (safe when product is null)
   const mediaUri = product?.mediaUri?.trim();
@@ -330,8 +291,8 @@ export default function ProductScreen() {
             <TouchableOpacity onPress={handleShare} className="h-10 w-10 rounded-full bg-black/50 items-center justify-center">
               <Ionicons name="share-outline" size={22} color="#fff" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => toggleWishlist(product)} className="h-10 w-10 rounded-full bg-black/50 items-center justify-center">
-              <Ionicons name={isInWishlist(product.id) ? "heart" : "heart-outline"} size={22} color={isInWishlist(product.id) ? "#ef4444" : "#fff"} />
+            <TouchableOpacity onPress={() => product && toggleWishlistMutation.mutate(product)} className="h-10 w-10 rounded-full bg-black/50 items-center justify-center">
+              <Ionicons name={isInWishlist ? "heart" : "heart-outline"} size={22} color={isInWishlist ? "#ef4444" : "#fff"} />
             </TouchableOpacity>
           </View>
         </View>

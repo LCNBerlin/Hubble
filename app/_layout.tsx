@@ -24,10 +24,6 @@ import {
   setStoredReferralRef,
 } from "../lib/referral";
 import { AuthProvider, useAuth } from "../context/AuthContext";
-import { CartProvider } from "../context/CartContext";
-import { ContentProvider } from "../context/ContentContext";
-import { ProfileProvider } from "../context/ProfileContext";
-import { WishlistProvider } from "../context/WishlistContext";
 import { StripeContextProvider, defaultStripeContext } from "../context/StripeContext";
 import { STRIPE_PUBLISHABLE_KEY } from "../lib/config";
 import "./globals.css";
@@ -142,21 +138,13 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <AuthProvider>
-            <ContentProvider>
-              <ProfileProvider>
-                <CartProvider>
-                  <WishlistProvider>
-                    <ReferralRefCapture />
-                    <StripeWrapper>
-                      <AuthGate>
-                        <PushNotificationHandler />
-                            <Stack screenOptions={{ headerShown: false }} />
-                      </AuthGate>
-                    </StripeWrapper>
-                  </WishlistProvider>
-                </CartProvider>
-              </ProfileProvider>
-            </ContentProvider>
+            <ReferralRefCapture />
+            <StripeWrapper>
+              <AuthGate>
+                <PushNotificationHandler />
+                    <Stack screenOptions={{ headerShown: false }} />
+              </AuthGate>
+            </StripeWrapper>
           </AuthProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>

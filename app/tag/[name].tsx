@@ -21,9 +21,10 @@ import { PostPreviewCard } from "../../components/PostPreviewCard";
 import { TipModal } from "../../components/TipModal";
 import { useAuth } from "../../context/AuthContext";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
-import supabase from "../../lib/supabase";
+import { apiGet } from "../../lib/api";
 import type { ProfileRow, PostRow } from "../../lib/supabase-profiles";
-import { useProfile } from "../../context/ProfileContext";
+import { useSavedDataQuery } from "../../hooks/useProfileQuery";
+import { useToggleSavePostMutation } from "../../hooks/useProfileMutations";
 
 const GRID_PADDING = 16;
 const GRID_GAP = 8;
@@ -205,7 +206,10 @@ export default function TagFeedScreen() {
   const { name } = useLocalSearchParams<{ name: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const { savedPostIds, toggleSavePost } = useProfile();
+  const { data: savedData } = useSavedDataQuery(user?.id);
+  const savedPostIds = savedData?.postIds ?? [];
+  const toggleSavePostMutation = useToggleSavePostMutation();
+  const toggleSavePost = (postId: string) => toggleSavePostMutation.mutate(postId);
   const tagName = (name ?? "").trim().toLowerCase();
   const [items, setItems] = useState<TagPostItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -243,43 +247,41 @@ export default function TagFeedScreen() {
   }
 
   const fetchPosts = useCallback(async () => {
-    if (!supabase || !tagName) {
+    if (!tagName) {
       setItems([]);
       return;
     }
-    const { data: tagRow } = await supabase.from("hashtags").select("id").eq("name", tagName).maybeSingle();
-    if (!tagRow?.id) {
+    try {
+      const data = await apiGet<Record<string, unknown>[]>(`/posts/by-hashtag/${encodeURIComponent(tagName)}`);
+      const list: TagPostItem[] = (data ?? []).map((row) => ({
+        post: {
+          id: row.id as string,
+          user_id: row.user_id as string,
+          type: row.type as string,
+          title: row.title as string | null,
+          body: row.body as string | null,
+          media_uri: row.media_uri as string | null,
+          created_at: row.created_at as string,
+          poll_options: Array.isArray(row.poll_options) ? (row.poll_options as string[]) : undefined,
+          thumbnail_uri: (row.thumbnail_uri as string | null) ?? undefined,
+        } as PostRow,
+        profile: {
+          id: row.user_id as string,
+          display_name: row.display_name as string | null,
+          username: row.username as string,
+          bio: null,
+          avatar_url: row.avatar_url as string | null,
+          banner_url: null,
+          followers_count: 0,
+          following_count: 0,
+          created_at: "",
+          updated_at: "",
+        } as ProfileRow,
+      }));
+      setItems(list);
+    } catch {
       setItems([]);
-      return;
     }
-    const { data: phRows } = await supabase
-      .from("post_hashtags")
-      .select("post_id")
-      .eq("hashtag_id", tagRow.id);
-    const postIds = (phRows ?? []).map((r: { post_id: string }) => r.post_id);
-    if (postIds.length === 0) {
-      setItems([]);
-      return;
-    }
-    const { data: postsData } = await supabase
-      .from("posts")
-      .select("*, profiles!user_id(display_name, username, avatar_url)")
-      .in("id", postIds)
-      .order("created_at", { ascending: false });
-    const list: TagPostItem[] = (postsData ?? []).map((row: Record<string, unknown>) => ({
-      post: {
-        id: row.id as string,
-        user_id: row.user_id as string,
-        type: row.type as string,
-        title: row.title as string | null,
-        body: row.body as string | null,
-        media_uri: row.media_uri as string | null,
-        created_at: row.created_at as string,
-        poll_options: Array.isArray(row.poll_options) ? (row.poll_options as string[]) : undefined,
-      },
-      profile: row.profiles as ProfileRow | null,
-    }));
-    setItems(list);
   }, [tagName]);
 
   const load = useCallback(async (showRefresh = false) => {

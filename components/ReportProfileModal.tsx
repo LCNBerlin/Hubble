@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback } from "react";
 import { Alert, Modal, Pressable, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
-import supabase from "../lib/supabase";
+import { apiPost } from "../lib/api";
 
 export type ReportProfileModalProps = {
   visible: boolean;
@@ -16,12 +16,8 @@ export function ReportProfileModal({ visible, reportedId, onClose }: ReportProfi
 
   const handleReport = useCallback(
     async (reason: string) => {
-      if (supabase && user?.id && reportedId) {
-        await supabase.from("reports").insert({
-          reporter_id: user.id,
-          reported_id: reportedId,
-          reason,
-        });
+      if (user?.id && reportedId) {
+        await apiPost(`/profiles/${reportedId}/report`, { reason }).catch(() => {});
       }
       onClose();
       Alert.alert("Report submitted", "Thank you. We'll review this profile.");

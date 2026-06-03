@@ -2,8 +2,8 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Text, View } from "react-native";
 import { PostCard } from "./PostCard";
-import supabase from "../lib/supabase";
 import type { ProfileRow, PostRow } from "../lib/supabase-profiles";
+import { apiGet } from "../lib/api";
 
 const RANDOM_BATCH_SIZE = 20;
 const RANDOM_FETCH_LIMIT = 100;
@@ -71,36 +71,29 @@ export function FeedRandomPostsCarousel({
 
   const fetchBatch = useCallback(
     async (exclude: string[]) => {
-      if (!supabase || !creatorId) return [];
-      const query = supabase
-        .from("posts")
-        .select("*, profiles!user_id(display_name, username, avatar_url), post_hashtags(hashtags(name))")
-        .eq("user_id", creatorId)
-        .order("created_at", { ascending: false })
-        .limit(RANDOM_FETCH_LIMIT);
-      const { data, error } = await query;
-      if (error) return [];
+      if (!creatorId) return [];
+      const data = await apiGet<Record<string, unknown>[]>(`/posts/by-user/${creatorId}`).catch(() => []);
       const list: FeedPostCarouselItem[] = (data ?? [])
-        .filter((row: Record<string, unknown>) => !exclude.includes(row.id as string))
-        .map((row: Record<string, unknown>) => {
-          const phList = (row.post_hashtags as Array<{ hashtags: { name: string } | null }> | undefined) ?? [];
-          const hashtags = phList.map((ph) => ph.hashtags?.name).filter((n): n is string => !!n);
-          return {
-            post: {
-              id: row.id as string,
-              user_id: row.user_id as string,
-              type: row.type as string,
-              title: row.title as string | null,
-              body: row.body as string | null,
-              media_uri: row.media_uri as string | null,
-              created_at: row.created_at as string,
-              place_name: (row.place_name as string | null) ?? null,
-              hashtags,
-              poll_options: Array.isArray(row.poll_options) ? (row.poll_options as string[]) : undefined,
-            },
-            profile: row.profiles as ProfileRow | null,
-          };
-        });
+        .filter((row) => !exclude.includes(row.id as string))
+        .map((row) => ({
+          post: {
+            id: row.id as string,
+            user_id: row.user_id as string,
+            type: row.type as string,
+            title: row.title as string | null,
+            body: row.body as string | null,
+            media_uri: row.media_uri as string | null,
+            created_at: row.created_at as string,
+            place_name: (row.place_name as string | null) ?? null,
+            hashtags: Array.isArray(row.hashtags) ? (row.hashtags as string[]) : [],
+            poll_options: Array.isArray(row.poll_options) ? (row.poll_options as string[]) : undefined,
+          },
+          profile: {
+            username: row.username as string ?? "",
+            display_name: (row.display_name as string | null) ?? null,
+            avatar_url: (row.avatar_url as string | null) ?? null,
+          } as ProfileRow,
+        }));
       return list.slice(0, RANDOM_BATCH_SIZE);
     },
     [creatorId]

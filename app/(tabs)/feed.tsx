@@ -27,7 +27,8 @@ import { TipModal } from "../../components/TipModal";
 import { Avatar, EmptyState } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
 import { useCommunityStore } from "../../store/community-store";
-import { useProfile } from "../../context/ProfileContext";
+import { useSavedDataQuery } from "../../hooks/useProfileQuery";
+import { useToggleSavePostMutation, useBlockMutation } from "../../hooks/useProfileMutations";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
 import {
   getCurrentPositionAsync,
@@ -610,7 +611,13 @@ export default function FeedScreen() {
   const paddingHorizontal = 0;
   const { user } = useAuth();
   const { selectedCommunityId, selectedCommunity, setSelectedCommunityId } = useCommunityStore();
-  const { savedPostIds, toggleSavePost, blockUser, blockedUserIds } = useProfile();
+  const { data: savedData } = useSavedDataQuery(user?.id);
+  const savedPostIds = savedData?.postIds ?? [];
+  const blockedUserIds = savedData?.blockedIds ?? [];
+  const toggleSavePostMutation = useToggleSavePostMutation();
+  const toggleSavePost = (postId: string) => toggleSavePostMutation.mutate(postId);
+  const blockMutation = useBlockMutation();
+  const blockUser = (userId: string) => blockMutation.mutate(userId);
   const [reportTargetUserId, setReportTargetUserId] = useState<string | null>(null);
   const [hiddenPostIds, setHiddenPostIds] = useState<Set<string>>(() => new Set());
   const [items, setItems] = useState<FeedPost[]>([]);

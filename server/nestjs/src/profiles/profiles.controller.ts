@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Delete, Param, Body, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Patch, Post, Delete, Param, Body, Query, UseGuards, HttpCode } from "@nestjs/common";
 import { ProfilesService } from "./profiles.service";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { CurrentUser, JwtUser } from "../common/decorators/current-user.decorator";
@@ -10,6 +10,9 @@ class UpdateProfileDto {
   @IsOptional() @IsString() bio?: string;
   @IsOptional() @IsUrl() avatarUrl?: string;
   @IsOptional() @IsUrl() bannerUrl?: string;
+  @IsOptional() @IsString() location?: string;
+  @IsOptional() lat?: number | null;
+  @IsOptional() lng?: number | null;
 }
 
 @Controller("profiles")
@@ -66,6 +69,16 @@ export class ProfilesController {
     ]).then(([postIds, productIds, blockedIds]) => ({ postIds, productIds, blockedIds }));
   }
 
+  @Get("me/saved-posts")
+  getSavedPosts(@CurrentUser() user: JwtUser) {
+    return this.profiles.getSavedPosts(user.sub);
+  }
+
+  @Get("me/saved-products")
+  getSavedProducts(@CurrentUser() user: JwtUser) {
+    return this.profiles.getSavedProducts(user.sub);
+  }
+
   @Post("me/save-post/:postId")
   toggleSavePost(@CurrentUser() user: JwtUser, @Param("postId") postId: string) {
     return this.profiles.toggleSavePost(user.sub, postId);
@@ -101,5 +114,11 @@ export class ProfilesController {
   @Get(":id/follow-status")
   followStatus(@CurrentUser() user: JwtUser, @Param("id") targetId: string) {
     return this.profiles.isFollowing(user.sub, targetId).then((isFollowing) => ({ isFollowing }));
+  }
+
+  @Post(":id/report")
+  @HttpCode(204)
+  report(@CurrentUser() user: JwtUser, @Param("id") reportedId: string, @Body() body: { reason: string }) {
+    return this.profiles.reportUser(user.sub, reportedId, body.reason);
   }
 }

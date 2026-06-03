@@ -53,6 +53,17 @@ export class PostsController {
     return this.posts.delete(id, user.sub);
   }
 
+  @Get(":id/hashtags")
+  getHashtags(@Param("id") id: string) {
+    return this.posts.getHashtags(id);
+  }
+
+  @Post(":id/hashtags")
+  @HttpCode(204)
+  syncHashtags(@Param("id") id: string, @CurrentUser() user: JwtUser, @Body() body: { tagNames: string[] }) {
+    return this.posts.syncHashtags(id, user.sub, body.tagNames ?? []);
+  }
+
   @Post(":id/like")
   toggleLike(@Param("id") id: string, @CurrentUser() user: JwtUser) {
     return this.posts.toggleLike(id, user.sub);
@@ -64,12 +75,22 @@ export class PostsController {
   }
 
   @Get(":id/comments")
-  getComments(@Param("id") id: string) {
-    return this.posts.getComments(id);
+  getComments(@Param("id") id: string, @CurrentUser() user: JwtUser) {
+    return this.posts.getComments(id, user.sub);
   }
 
   @Post(":id/comments")
   addComment(@Param("id") id: string, @CurrentUser() user: JwtUser, @Body() body: { body: string; parentId?: string }) {
     return this.posts.addComment(id, user.sub, body.body, body.parentId);
+  }
+
+  @Post(":postId/comments/:commentId/like")
+  toggleCommentLike(@Param("commentId") commentId: string, @CurrentUser() user: JwtUser) {
+    return this.posts.toggleCommentLike(commentId, user.sub);
+  }
+
+  @Post(":postId/comments/:commentId/dislike")
+  toggleCommentDislike(@Param("commentId") commentId: string, @CurrentUser() user: JwtUser) {
+    return this.posts.toggleCommentDislike(commentId, user.sub);
   }
 }

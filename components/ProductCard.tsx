@@ -5,12 +5,12 @@ import { useEffect, useState } from "react";
 import { Alert, TouchableOpacity, View, Text } from "react-native";
 import { Card } from "./ui";
 import { Avatar } from "./ui";
-import { useCart } from "../context/CartContext";
-import type { Product } from "../context/ContentContext";
-import { useContent } from "../context/ContentContext";
 import { useAuth } from "../context/AuthContext";
 import { useMyProfileQuery } from "../hooks/useProfileQuery";
-import { useWishlist } from "../context/WishlistContext";
+import type { Product } from "../lib/product-types";
+import { useAddToCartMutation } from "../hooks/useCartQuery";
+import { useWishlistQuery, useToggleWishlistMutation } from "../hooks/useWishlistQuery";
+import { useProductReviewsQuery } from "../hooks/useProductsQuery";
 import { formatCentsToPrice, parsePriceToCents } from "../lib/payments";
 
 export type CreatorInfo = {
@@ -91,9 +91,11 @@ export function ProductCard({
   const router = useRouter();
   const { user } = useAuth();
   const { data: profile } = useMyProfileQuery(user?.id);
-  const { addToCart } = useCart();
-  const { getReviewsForProduct } = useContent();
-  const { isInWishlist, toggleWishlist } = useWishlist();
+  const addToCartMutation = useAddToCartMutation();
+  const { data: reviews = [] } = useProductReviewsQuery(product.id);
+  const { data: wishlistItems = [] } = useWishlistQuery();
+  const toggleWishlistMutation = useToggleWishlistMutation();
+  const isInWishlist = wishlistItems.some((p) => p.id === product.id);
   const [imageError, setImageError] = useState(false);
 
   const mediaUri = product.mediaUri?.trim();
@@ -109,10 +111,10 @@ export function ProductCard({
     setImageError(false);
   }, [thumbnailUri]);
 
-  const inWishlist = isInWishlist(product.id);
+  const inWishlist = isInWishlist;
 
   const handleAdd = () => {
-    addToCart(product, 1);
+    addToCartMutation.mutate({ product, quantity: 1 });
     if (onCheckout) {
       const action: "buy" | "download" | "join" | "book" =
         product.type === "physical"
@@ -192,7 +194,6 @@ export function ProductCard({
 
   if (profilePreview) {
     const priceRange = getPriceRangeDisplay(product);
-    const reviews = getReviewsForProduct(product.id);
     const reviewAvg =
       reviews.length > 0
         ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
@@ -229,7 +230,7 @@ export function ProductCard({
               </View>
             )}
             <TouchableOpacity
-              onPress={() => toggleWishlist(product)}
+              onPress={() => toggleWishlistMutation.mutate(product)}
               className="absolute right-2 top-2 z-10 h-8 w-8 items-center justify-center rounded-full bg-black/50"
             >
               <Ionicons name={inWishlist ? "heart" : "heart-outline"} size={18} color={inWishlist ? "#ef4444" : "#fff"} />
@@ -364,7 +365,7 @@ export function ProductCard({
           </View>
         ) : null}
         <TouchableOpacity
-          onPress={() => toggleWishlist(product)}
+          onPress={() => toggleWishlistMutation.mutate(product)}
           className="absolute right-2 top-2 z-10 h-9 w-9 items-center justify-center rounded-full bg-white/90"
         >
           <Ionicons name={inWishlist ? "heart" : "heart-outline"} size={20} color={inWishlist ? "#ef4444" : "#3b82f6"} />

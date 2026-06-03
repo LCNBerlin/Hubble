@@ -21,6 +21,14 @@ CREATE TABLE IF NOT EXISTS blocked_users (
   UNIQUE(blocker_id, blocked_id)
 );
 
+CREATE TABLE IF NOT EXISTS reports (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  reporter_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  reported_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  reason varchar NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- ─────────────────────────────────────────────
 -- POSTS & CONTENT
 -- ─────────────────────────────────────────────
@@ -82,6 +90,17 @@ CREATE TABLE IF NOT EXISTS saved_posts (
   UNIQUE(post_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS stories (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  media_uri varchar NOT NULL,
+  type varchar NOT NULL DEFAULT 'image',
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '24 hours'),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS stories_user_id_idx ON stories(user_id);
+CREATE INDEX IF NOT EXISTS stories_expires_at_idx ON stories(expires_at);
+
 CREATE TABLE IF NOT EXISTS hashtags (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name varchar NOT NULL UNIQUE,
@@ -95,6 +114,30 @@ CREATE TABLE IF NOT EXISTS post_hashtags (
   PRIMARY KEY(post_id, hashtag_id)
 );
 CREATE INDEX IF NOT EXISTS post_hashtags_hashtag_id_idx ON post_hashtags(hashtag_id);
+
+CREATE TABLE IF NOT EXISTS events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  title varchar NOT NULL,
+  description text,
+  date timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS events_user_id_idx ON events(user_id);
+
+CREATE TABLE IF NOT EXISTS comment_likes (
+  comment_id uuid NOT NULL REFERENCES post_comments(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(comment_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS comment_dislikes (
+  comment_id uuid NOT NULL REFERENCES post_comments(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(comment_id, user_id)
+);
 
 CREATE TABLE IF NOT EXISTS post_watch_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

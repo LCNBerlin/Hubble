@@ -5,10 +5,10 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { Avatar } from "./ui";
-import type { Product } from "../context/ContentContext";
+import type { Product } from "../lib/product-types";
 import { rowToProduct } from "../lib/supabase-products";
-import supabase from "../lib/supabase";
 import type { ProfileRow } from "../lib/supabase-profiles";
+import { apiGet } from "../lib/api";
 
 const CREATOR_CARD_BG = "#2c1810";
 const SOCIAL_BUTTON_BG = "#7c3aed";
@@ -53,36 +53,30 @@ export function FeedUserCard({
   const [products, setProducts] = useState<Product[]>([]);
 
   useEffect(() => {
-    if (!supabase || !creatorId) return;
-    supabase
-      .from("posts")
-      .select("id, media_uri, type, title")
-      .eq("user_id", creatorId)
-      .order("created_at", { ascending: false })
-      .limit(POST_SNAPSHOT_LIMIT)
-      .then(({ data }) => {
+    if (!creatorId) return;
+    apiGet<{ id: string; media_uri: string | null; type: string; title: string | null }[]>(`/posts/by-user/${creatorId}`)
+      .then((data) =>
         setPosts(
-          (data ?? []).map((r: { id: string; media_uri: string | null; type: string; title: string | null }) => ({
+          (data ?? []).slice(0, POST_SNAPSHOT_LIMIT).map((r) => ({
             id: r.id,
             media_uri: r.media_uri,
             type: r.type ?? "blog",
             title: r.title ?? null,
           }))
-        );
-      });
+        )
+      )
+      .catch(() => {});
   }, [creatorId]);
 
   useEffect(() => {
-    if (!supabase || !creatorId) return;
-    supabase
-      .from("products")
-      .select("*")
-      .eq("creator_id", creatorId)
-      .order("created_at", { ascending: false })
-      .limit(PRODUCT_SNAPSHOT_LIMIT)
-      .then(({ data }) => {
-        setProducts((data ?? []).map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-      });
+    if (!creatorId) return;
+    apiGet<Record<string, unknown>[]>(`/products/by-creator/${creatorId}`)
+      .then((data) =>
+        setProducts(
+          (data ?? []).slice(0, PRODUCT_SNAPSHOT_LIMIT).map((row) => rowToProduct(row as Parameters<typeof rowToProduct>[0]))
+        )
+      )
+      .catch(() => {});
   }, [creatorId]);
 
   const scale = 0.75;

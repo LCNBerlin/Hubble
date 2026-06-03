@@ -21,14 +21,16 @@ import { PostPreviewCard } from "../../components/PostPreviewCard";
 import { ProductCard } from "../../components/ProductCard";
 import { TipModal } from "../../components/TipModal";
 import { useAuth } from "../../context/AuthContext";
-import { useCart } from "../../context/CartContext";
-import type { Event, Post, PostType, Product } from "../../context/ContentContext";
-import { useContent } from "../../context/ContentContext";
-import { useProfile } from "../../context/ProfileContext";
+import type { Event, Post, PostType, Product } from "../../lib/product-types";
+import { useRemoveFromCartMutation } from "../../hooks/useCartQuery";
+import { useMyProfileQuery, useSavedDataQuery } from "../../hooks/useProfileQuery";
+import { useToggleSavePostMutation, useToggleSaveProductMutation } from "../../hooks/useProfileMutations";
+import { useUpdateProductMutation, useDeleteProductMutation } from "../../hooks/useProductsQuery";
+import { useEventsByUserQuery } from "../../hooks/useEventsQuery";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
 import { CREATOR_AVATAR } from "../../lib/constants";
 import { rowToProduct } from "../../lib/supabase-products";
-import supabase from "../../lib/supabase";
+import { apiGet, apiDelete } from "../../lib/api";
 
 type ProfileTabId = "posts" | "products" | "events" | "saved";
 type ProfilePost = Post & { createdAt?: string };
@@ -693,17 +695,22 @@ function ProfileTabContent({
 }
 
 export default function ProfileScreen() {
-  const { updateProduct, deleteProduct, loadReviewsForProduct } = useContent();
-  const { removeFromCart } = useCart();
-  const { profile, savedPostIds, savedProductIds, toggleSavePost, toggleSaveProduct, profileLoadDone, refetchProfile } = useProfile();
   const { signOut, user } = useAuth();
+  const updateProductMutation = useUpdateProductMutation();
+  const deleteProductMutation = useDeleteProductMutation();
+  const removeFromCartMutation = useRemoveFromCartMutation();
+  const { data: myProfile, isSuccess: profileLoadDone, refetch: refetchProfile } = useMyProfileQuery(user?.id);
+  const { data: savedData } = useSavedDataQuery(user?.id);
+  const savedPostIds = savedData?.postIds ?? [];
+  const savedProductIds = savedData?.productIds ?? [];
+  const toggleSavePostMutation = useToggleSavePostMutation();
+  const toggleSaveProductMutation = useToggleSaveProductMutation();
+  const { data: eventsData = [], isLoading: myEventsLoading } = useEventsByUserQuery(user?.id);
   const router = useRouter();
   const [myPosts, setMyPosts] = useState<ProfilePost[]>([]);
   const [myPostsLoading, setMyPostsLoading] = useState(true);
   const [myProducts, setMyProducts] = useState<Product[]>([]);
   const [myProductsLoading, setMyProductsLoading] = useState(true);
-  const [myEvents, setMyEvents] = useState<Event[]>([]);
-  const [myEventsLoading, setMyEventsLoading] = useState(true);
   const [fullscreenImageUri, setFullscreenImageUri] = useState<string | null>(null);
   const [tipModalVisible, setTipModalVisible] = useState(false);
   const [tipForPostTitle, setTipForPostTitle] = useState<string | undefined>(undefined);
@@ -714,31 +721,25 @@ export default function ProfileScreen() {
   const [savedProductsLoading, setSavedProductsLoading] = useState(false);
 
   const fetchMyPosts = useCallback(async () => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setMyPosts([]);
       setMyPostsLoading(false);
       return;
     }
     setMyPostsLoading(true);
     try {
-      const { data } = await supabase
-        .from("posts")
-        .select("id, type, title, body, media_uri, thumbnail_uri, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-      if (data) {
-        setMyPosts(
-          data.map((row: { id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null; created_at?: string }) => ({
-            id: row.id,
-            type: row.type as PostType,
-            title: row.title ?? "",
-            body: row.body ?? undefined,
-            mediaUri: row.media_uri ?? undefined,
-            thumbnailUri: row.thumbnail_uri ?? undefined,
-            ...(row.created_at != null && { createdAt: row.created_at }),
-          }))
-        );
-      } else setMyPosts([]);
+      const data = await apiGet<Array<{ id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null; created_at?: string }>>(`/posts/by-user/${user.id}`);
+      setMyPosts(
+        data.map((row) => ({
+          id: row.id,
+          type: row.type as PostType,
+          title: row.title ?? "",
+          body: row.body ?? undefined,
+          mediaUri: row.media_uri ?? undefined,
+          thumbnailUri: row.thumbnail_uri ?? undefined,
+          ...(row.created_at != null && { createdAt: row.created_at }),
+        }))
+      );
     } catch {
       setMyPosts([]);
     } finally {
@@ -747,21 +748,15 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   const fetchMyProducts = useCallback(async () => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setMyProducts([]);
       setMyProductsLoading(false);
       return;
     }
     setMyProductsLoading(true);
     try {
-      const { data } = await supabase
-        .from("products")
-        .select("*")
-        .eq("creator_id", user.id)
-        .order("created_at", { ascending: false });
-      if (data) {
-        setMyProducts(data.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-      } else setMyProducts([]);
+      const data = await apiGet<Parameters<typeof rowToProduct>[0][]>(`/products/by-creator/${user.id}`);
+      setMyProducts(data.map((row) => rowToProduct(row)));
     } catch {
       setMyProducts([]);
     } finally {
@@ -769,71 +764,25 @@ export default function ProfileScreen() {
     }
   }, [user?.id]);
 
-  const fetchMyEvents = useCallback(async () => {
-    if (!supabase || !user?.id) {
-      setMyEvents([]);
-      setMyEventsLoading(false);
-      return;
-    }
-    setMyEventsLoading(true);
-    try {
-      const { data } = await supabase
-        .from("events")
-        .select("id, title, description, date, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-      if (data) {
-        setMyEvents(
-          (data as { id: string; title: string; description: string | null; date: number; created_at: string }[]).map((row) => ({
-            id: row.id,
-            title: row.title,
-            description: row.description ?? undefined,
-            date: row.date,
-            createdAt: new Date(row.created_at).getTime(),
-          }))
-        );
-      } else setMyEvents([]);
-    } catch {
-      setMyEvents([]);
-    } finally {
-      setMyEventsLoading(false);
-    }
-  }, [user?.id]);
-
   const fetchSavedPosts = useCallback(async () => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setSavedPosts([]);
       setSavedPostsLoading(false);
       return;
     }
     setSavedPostsLoading(true);
     try {
-      const { data: savedRows } = await supabase.from("saved_posts").select("post_id").eq("user_id", user.id);
-      const postIds = (savedRows ?? []).map((r: { post_id: string }) => r.post_id);
-      if (postIds.length === 0) {
-        setSavedPosts([]);
-        setSavedPostsLoading(false);
-        return;
-      }
-      const { data: postsData } = await supabase.from("posts").select("id, type, title, body, media_uri, thumbnail_uri").in("id", postIds);
-      if (postsData) {
-        const byId = new Map((postsData as { id: string }[]).map((r) => [r.id, r]));
-        setSavedPosts(
-          postIds
-            .filter((id) => byId.has(id))
-            .map((id) => {
-              const row = byId.get(id) as { id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null };
-              return {
-                id: row.id,
-                type: row.type as PostType,
-                title: row.title ?? "",
-                body: row.body ?? undefined,
-                mediaUri: row.media_uri ?? undefined,
-                thumbnailUri: row.thumbnail_uri ?? undefined,
-              };
-            })
-        );
-      } else setSavedPosts([]);
+      const data = await apiGet<Array<{ id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null }>>("/profiles/me/saved-posts");
+      setSavedPosts(
+        data.map((row) => ({
+          id: row.id,
+          type: row.type as PostType,
+          title: row.title ?? "",
+          body: row.body ?? undefined,
+          mediaUri: row.media_uri ?? undefined,
+          thumbnailUri: row.thumbnail_uri ?? undefined,
+        }))
+      );
     } catch {
       setSavedPosts([]);
     } finally {
@@ -842,24 +791,15 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   const fetchSavedProducts = useCallback(async () => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setSavedProducts([]);
       setSavedProductsLoading(false);
       return;
     }
     setSavedProductsLoading(true);
     try {
-      const { data: savedRows } = await supabase.from("saved_products").select("product_id").eq("user_id", user.id);
-      const productIds = (savedRows ?? []).map((r: { product_id: string }) => r.product_id);
-      if (productIds.length === 0) {
-        setSavedProducts([]);
-        setSavedProductsLoading(false);
-        return;
-      }
-      const { data: productsData } = await supabase.from("products").select("*").in("id", productIds);
-      if (productsData) {
-        setSavedProducts(productsData.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-      } else setSavedProducts([]);
+      const data = await apiGet<Parameters<typeof rowToProduct>[0][]>("/profiles/me/saved-products");
+      setSavedProducts(data.map((row) => rowToProduct(row)));
     } catch {
       setSavedProducts([]);
     } finally {
@@ -873,11 +813,10 @@ export default function ProfileScreen() {
         refetchProfile();
         fetchMyPosts();
         fetchMyProducts();
-        fetchMyEvents();
         fetchSavedPosts();
         fetchSavedProducts();
       }
-    }, [user?.id, refetchProfile, fetchMyPosts, fetchMyProducts, fetchMyEvents, fetchSavedPosts, fetchSavedProducts])
+    }, [user?.id, refetchProfile, fetchMyPosts, fetchMyProducts, fetchSavedPosts, fetchSavedProducts])
   );
 
   const postIds = useMemo(
@@ -888,11 +827,10 @@ export default function ProfileScreen() {
 
   const handleDeletePost = useCallback(
     async (postId: string) => {
-      if (!supabase) return;
-      await supabase.from("posts").delete().eq("id", postId).eq("user_id", user?.id);
+      await apiDelete(`/posts/${postId}`);
       setMyPosts((prev) => prev.filter((p) => p.id !== postId));
     },
-    [user?.id]
+    []
   );
 
   const handleDeleteProduct = useCallback(
@@ -902,16 +840,27 @@ export default function ProfileScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            if (!supabase) return;
-            await supabase.from("products").delete().eq("id", productId).eq("creator_id", user?.id);
-            deleteProduct(productId);
+          onPress: () => {
+            deleteProductMutation.mutate(productId);
             setMyProducts((prev) => prev.filter((p) => p.id !== productId));
           },
         },
       ]);
     },
-    [user?.id, deleteProduct]
+    [deleteProductMutation]
+  );
+
+  const updateProduct = useCallback(
+    (id: string, updates: Partial<Product>) => updateProductMutation.mutate({ id, updates }),
+    [updateProductMutation]
+  );
+  const toggleSavePost = useCallback(
+    (id: string) => toggleSavePostMutation.mutate(id),
+    [toggleSavePostMutation]
+  );
+  const toggleSaveProduct = useCallback(
+    (id: string) => toggleSaveProductMutation.mutate(id),
+    [toggleSaveProductMutation]
   );
 
   const handleRequestTip = useCallback((postTitle?: string) => {
@@ -936,12 +885,12 @@ export default function ProfileScreen() {
     );
   }
 
-  const avatarSource = profile.avatarUri ? { uri: profile.avatarUri } : CREATOR_AVATAR;
-  const displayName = profileLoadDone ? profile.displayName || "Creator" : "…";
-  const username = profileLoadDone ? profile.username || "user" : "…";
+  const avatarSource = myProfile?.avatar_url ? { uri: myProfile.avatar_url } : CREATOR_AVATAR;
+  const displayName = profileLoadDone ? myProfile?.display_name || "Creator" : "…";
+  const username = profileLoadDone ? myProfile?.username || "user" : "…";
   const postsCount = myPosts.length;
-  const followersCount = profile.followersCount ?? 0;
-  const followingCount = profile.followingCount ?? 0;
+  const followersCount = myProfile?.followers_count ?? 0;
+  const followingCount = myProfile?.following_count ?? 0;
 
   return (
     <View className="flex-1 bg-zinc-950">
@@ -964,10 +913,10 @@ export default function ProfileScreen() {
               </Text>
               <View className="flex-row items-center gap-2 mt-2">
                 <View className="rounded px-2 py-0.5 bg-zinc-600/80">
-                  <Text className="text-xs font-medium text-zinc-200">Rep {profile.reputationScore ?? 0}</Text>
+                  <Text className="text-xs font-medium text-zinc-200">Rep {myProfile?.reputation_score ?? 0}</Text>
                 </View>
                 <View className="rounded px-2 py-0.5 bg-violet-600/80">
-                  <Text className="text-xs font-medium text-white">Lvl {profile.level ?? 0}</Text>
+                  <Text className="text-xs font-medium text-white">Lvl {myProfile?.level ?? 0}</Text>
                 </View>
               </View>
             </View>
@@ -1019,8 +968,8 @@ export default function ProfileScreen() {
             </View>
             <View className="px-4 pb-4 pt-2 border-t border-zinc-700">
               <Text className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">BIO</Text>
-              <Text className="text-sm text-zinc-300 mt-1">{profile.bio || "Creator • Posts, products & events"}</Text>
-              <Text className="text-xs text-zinc-500 mt-1">{formatMemberSince(profile.memberSince)}</Text>
+              <Text className="text-sm text-zinc-300 mt-1">{myProfile?.bio || "Creator • Posts, products & events"}</Text>
+              <Text className="text-xs text-zinc-500 mt-1">{myProfile?.created_at ? formatMemberSince(new Date(myProfile.created_at).getTime()) : ""}</Text>
             </View>
           </View>
         </View>
@@ -1053,10 +1002,10 @@ export default function ProfileScreen() {
             tabId={activeTab}
             posts={myPosts}
             postsLoading={myPostsLoading}
-            creator={user && profileLoadDone ? { id: user.id, displayName: profile.displayName ?? "", username: profile.username ?? "", avatarUri: profile.avatarUri ?? null } : undefined}
+            creator={user && profileLoadDone ? { id: user.id, displayName: myProfile?.display_name ?? "", username: myProfile?.username ?? "", avatarUri: myProfile?.avatar_url ?? null } : undefined}
             products={myProducts}
             productsLoading={myProductsLoading}
-            events={myEvents}
+            events={eventsData}
             eventsLoading={myEventsLoading}
             onViewImage={setFullscreenImageUri}
             savedPostIds={savedPostIds}
@@ -1083,7 +1032,6 @@ export default function ProfileScreen() {
             onDeleteProduct={handleDeleteProduct}
             onEditProduct={(prod) => router.push({ pathname: "/edit-product/[id]", params: { id: prod.id } })}
             onShowStats={() => router.push("/insights/income")}
-            loadReviewsForProduct={loadReviewsForProduct}
           />
             </View>
       </ScrollView>
