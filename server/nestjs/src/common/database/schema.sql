@@ -82,6 +82,17 @@ CREATE TABLE IF NOT EXISTS saved_posts (
   UNIQUE(post_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS stories (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  media_uri varchar NOT NULL,
+  type varchar NOT NULL DEFAULT 'image',
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '24 hours'),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS stories_user_id_idx ON stories(user_id);
+CREATE INDEX IF NOT EXISTS stories_expires_at_idx ON stories(expires_at);
+
 CREATE TABLE IF NOT EXISTS hashtags (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name varchar NOT NULL UNIQUE,
