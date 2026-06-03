@@ -28,7 +28,7 @@ import { useProfile } from "../../context/ProfileContext";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
 import { CREATOR_AVATAR } from "../../lib/constants";
 import { rowToProduct } from "../../lib/supabase-products";
-import supabase from "../../lib/supabase";
+import { apiGet, apiDelete } from "../../lib/api";
 
 type ProfileTabId = "posts" | "products" | "events" | "saved";
 type ProfilePost = Post & { createdAt?: string };
@@ -714,31 +714,21 @@ export default function ProfileScreen() {
   const [savedProductsLoading, setSavedProductsLoading] = useState(false);
 
   const fetchMyPosts = useCallback(async () => {
-    if (!supabase || !user?.id) {
-      setMyPosts([]);
-      setMyPostsLoading(false);
-      return;
-    }
+    if (!user?.id) { setMyPosts([]); setMyPostsLoading(false); return; }
     setMyPostsLoading(true);
     try {
-      const { data } = await supabase
-        .from("posts")
-        .select("id, type, title, body, media_uri, thumbnail_uri, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-      if (data) {
-        setMyPosts(
-          data.map((row: { id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null; created_at?: string }) => ({
-            id: row.id,
-            type: row.type as PostType,
-            title: row.title ?? "",
-            body: row.body ?? undefined,
-            mediaUri: row.media_uri ?? undefined,
-            thumbnailUri: row.thumbnail_uri ?? undefined,
-            ...(row.created_at != null && { createdAt: row.created_at }),
-          }))
-        );
-      } else setMyPosts([]);
+      const data = await apiGet<{ id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null; created_at?: string }[]>(`/posts/by-user/${user.id}`);
+      setMyPosts(
+        (data ?? []).map((row) => ({
+          id: row.id,
+          type: row.type as PostType,
+          title: row.title ?? "",
+          body: row.body ?? undefined,
+          mediaUri: row.media_uri ?? undefined,
+          thumbnailUri: row.thumbnail_uri ?? undefined,
+          ...(row.created_at != null && { createdAt: row.created_at }),
+        }))
+      );
     } catch {
       setMyPosts([]);
     } finally {
@@ -747,21 +737,11 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   const fetchMyProducts = useCallback(async () => {
-    if (!supabase || !user?.id) {
-      setMyProducts([]);
-      setMyProductsLoading(false);
-      return;
-    }
+    if (!user?.id) { setMyProducts([]); setMyProductsLoading(false); return; }
     setMyProductsLoading(true);
     try {
-      const { data } = await supabase
-        .from("products")
-        .select("*")
-        .eq("creator_id", user.id)
-        .order("created_at", { ascending: false });
-      if (data) {
-        setMyProducts(data.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-      } else setMyProducts([]);
+      const data = await apiGet<unknown[]>(`/products/by-creator/${user.id}`);
+      setMyProducts((data ?? []).map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
     } catch {
       setMyProducts([]);
     } finally {
@@ -770,29 +750,19 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   const fetchMyEvents = useCallback(async () => {
-    if (!supabase || !user?.id) {
-      setMyEvents([]);
-      setMyEventsLoading(false);
-      return;
-    }
+    if (!user?.id) { setMyEvents([]); setMyEventsLoading(false); return; }
     setMyEventsLoading(true);
     try {
-      const { data } = await supabase
-        .from("events")
-        .select("id, title, description, date, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-      if (data) {
-        setMyEvents(
-          (data as { id: string; title: string; description: string | null; date: number; created_at: string }[]).map((row) => ({
-            id: row.id,
-            title: row.title,
-            description: row.description ?? undefined,
-            date: row.date,
-            createdAt: new Date(row.created_at).getTime(),
-          }))
-        );
-      } else setMyEvents([]);
+      const data = await apiGet<{ id: string; title: string; description: string | null; date: number; created_at: string }[]>("/events");
+      setMyEvents(
+        (data ?? []).map((row) => ({
+          id: row.id,
+          title: row.title,
+          description: row.description ?? undefined,
+          date: row.date,
+          createdAt: new Date(row.created_at).getTime(),
+        }))
+      );
     } catch {
       setMyEvents([]);
     } finally {
@@ -801,39 +771,24 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   const fetchSavedPosts = useCallback(async () => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setSavedPosts([]);
       setSavedPostsLoading(false);
       return;
     }
     setSavedPostsLoading(true);
     try {
-      const { data: savedRows } = await supabase.from("saved_posts").select("post_id").eq("user_id", user.id);
-      const postIds = (savedRows ?? []).map((r: { post_id: string }) => r.post_id);
-      if (postIds.length === 0) {
-        setSavedPosts([]);
-        setSavedPostsLoading(false);
-        return;
-      }
-      const { data: postsData } = await supabase.from("posts").select("id, type, title, body, media_uri, thumbnail_uri").in("id", postIds);
-      if (postsData) {
-        const byId = new Map((postsData as { id: string }[]).map((r) => [r.id, r]));
-        setSavedPosts(
-          postIds
-            .filter((id) => byId.has(id))
-            .map((id) => {
-              const row = byId.get(id) as { id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null };
-              return {
-                id: row.id,
-                type: row.type as PostType,
-                title: row.title ?? "",
-                body: row.body ?? undefined,
-                mediaUri: row.media_uri ?? undefined,
-                thumbnailUri: row.thumbnail_uri ?? undefined,
-              };
-            })
-        );
-      } else setSavedPosts([]);
+      const data = await apiGet<{ id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null }[]>("/profiles/me/saved-posts");
+      setSavedPosts(
+        (data ?? []).map((row) => ({
+          id: row.id,
+          type: row.type as PostType,
+          title: row.title ?? "",
+          body: row.body ?? undefined,
+          mediaUri: row.media_uri ?? undefined,
+          thumbnailUri: row.thumbnail_uri ?? undefined,
+        }))
+      );
     } catch {
       setSavedPosts([]);
     } finally {
@@ -842,24 +797,15 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   const fetchSavedProducts = useCallback(async () => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setSavedProducts([]);
       setSavedProductsLoading(false);
       return;
     }
     setSavedProductsLoading(true);
     try {
-      const { data: savedRows } = await supabase.from("saved_products").select("product_id").eq("user_id", user.id);
-      const productIds = (savedRows ?? []).map((r: { product_id: string }) => r.product_id);
-      if (productIds.length === 0) {
-        setSavedProducts([]);
-        setSavedProductsLoading(false);
-        return;
-      }
-      const { data: productsData } = await supabase.from("products").select("*").in("id", productIds);
-      if (productsData) {
-        setSavedProducts(productsData.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-      } else setSavedProducts([]);
+      const data = await apiGet<unknown[]>("/profiles/me/saved-products");
+      setSavedProducts((data ?? []).map((row) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
     } catch {
       setSavedProducts([]);
     } finally {
@@ -888,11 +834,10 @@ export default function ProfileScreen() {
 
   const handleDeletePost = useCallback(
     async (postId: string) => {
-      if (!supabase) return;
-      await supabase.from("posts").delete().eq("id", postId).eq("user_id", user?.id);
+      await apiDelete(`/posts/${postId}`);
       setMyPosts((prev) => prev.filter((p) => p.id !== postId));
     },
-    [user?.id]
+    []
   );
 
   const handleDeleteProduct = useCallback(
@@ -903,8 +848,7 @@ export default function ProfileScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            if (!supabase) return;
-            await supabase.from("products").delete().eq("id", productId).eq("creator_id", user?.id);
+            await apiDelete(`/products/${productId}`);
             deleteProduct(productId);
             setMyProducts((prev) => prev.filter((p) => p.id !== productId));
           },

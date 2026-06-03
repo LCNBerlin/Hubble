@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS posts (
   thumbnail_uri varchar,
   is_sponsored boolean NOT NULL DEFAULT false,
   poll_options jsonb,
+  lat double precision,
+  lng double precision,
   place_name varchar,
   scheduled_at timestamptz,
   reputation_score decimal DEFAULT 0,
@@ -389,3 +391,47 @@ CREATE TABLE IF NOT EXISTS referral_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS referral_events_referrer_id_idx ON referral_events(referrer_id);
+
+-- ─────────────────────────────────────────────
+-- CREATOR EVENTS
+-- ─────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  description text,
+  date bigint NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS events_user_id_idx ON events(user_id);
+
+-- ─────────────────────────────────────────────
+-- REPORTS
+-- ─────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS reports (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  reporter_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  reported_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  reason text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ─────────────────────────────────────────────
+-- COMMENT REACTIONS
+-- ─────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS comment_likes (
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  comment_id uuid NOT NULL REFERENCES post_comments(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, comment_id)
+);
+
+CREATE TABLE IF NOT EXISTS comment_dislikes (
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  comment_id uuid NOT NULL REFERENCES post_comments(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, comment_id)
+);

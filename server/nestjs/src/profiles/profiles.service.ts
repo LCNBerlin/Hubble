@@ -148,4 +148,21 @@ export class ProfilesService {
       [`%${query}%`, limit]
     );
   }
+
+  async getSavedPostsFull(userId: string): Promise<unknown[]> {
+    return this.dataSource.query(
+      `SELECT p.id, p.post_type AS type, p.title, p.body, p.media_uri, p.thumbnail_uri
+       FROM saved_posts sp JOIN posts p ON p.id = sp.post_id
+       WHERE sp.user_id = $1 ORDER BY sp.created_at DESC`,
+      [userId]
+    );
+  }
+
+  async getSavedProductsFull(userId: string): Promise<unknown[]> {
+    return this.dataSource.query(
+      `SELECT p.* FROM saved_products sp JOIN products p ON p.id = sp.product_id
+       WHERE sp.user_id = $1 ORDER BY sp.created_at DESC`,
+      [userId]
+    );
+  }
 }

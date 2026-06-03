@@ -26,7 +26,7 @@ import {
   Accuracy as LocationAccuracy,
   requestForegroundPermissionsAsync,
 } from "../../lib/location";
-import supabase from "../../lib/supabase";
+import { apiGet, apiPatch, apiDelete } from "../../lib/api";
 
 async function pickImage(): Promise<{ uri: string; mimeType?: string | null } | null> {
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -101,43 +101,32 @@ export default function EditPostScreen() {
   const removeHashtag = (tag: string) => setHashtags((prev) => prev.filter((t) => t !== tag));
 
   const fetchPost = useCallback(async () => {
-    if (!supabase || !id) return;
+    if (!id) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("posts")
-      .select("id, user_id, type, title, body, media_uri, lat, lng, place_name")
-      .eq("id", id)
-      .single();
-    if (error || !data) {
-      setLoading(false);
+    try {
+      const row = await apiGet<PostRow>(`/posts/${id}`);
+      if (!row || (user && row.user_id !== user.id)) {
+        setPost(null);
+        setLoading(false);
+        return;
+      }
+      setPost(row);
+      setTitle(row.title ?? "");
+      setBody(row.body ?? "");
+      setMediaUri(row.media_uri ?? null);
+      setMediaMimeType(null);
+      setLocation(
+        row.lat != null && row.lng != null
+          ? { lat: row.lat, lng: row.lng, place_name: row.place_name ?? undefined }
+          : null
+      );
+      const tagNames = await apiGet<string[]>(`/posts/${id}/hashtags`).catch(() => []);
+      setHashtags(tagNames.map((t) => t.toLowerCase()));
+    } catch {
       setPost(null);
-      return;
-    }
-    const row = data as PostRow;
-    if (user && row.user_id !== user.id) {
+    } finally {
       setLoading(false);
-      setPost(null);
-      return;
     }
-    setPost(row);
-    setTitle(row.title ?? "");
-    setBody(row.body ?? "");
-    setMediaUri(row.media_uri ?? null);
-    setMediaMimeType(null);
-    setLocation(
-      row.lat != null && row.lng != null
-        ? { lat: row.lat, lng: row.lng, place_name: row.place_name ?? undefined }
-        : null
-    );
-    const { data: phData } = await supabase
-      .from("post_hashtags")
-      .select("hashtags(name)")
-      .eq("post_id", id);
-    const tagNames = (phData ?? [])
-      .map((r: { hashtags: { name: string } | null }) => r.hashtags?.name)
-      .filter(Boolean) as string[];
-    setHashtags(tagNames.map((t) => t.toLowerCase()));
-    setLoading(false);
   }, [id, user?.id]);
 
   useEffect(() => {
@@ -188,7 +177,7 @@ export default function EditPostScreen() {
   };
 
   const handleSave = async () => {
-    if (!post || !user || !supabase) return;
+    if (!post || !user) return;
     const finalTitle = title.trim() || null;
     if (needsUpload && !mediaUri) return;
     setSaving(true);
@@ -217,12 +206,9 @@ export default function EditPostScreen() {
       updatePayload.lng = null;
       updatePayload.place_name = null;
     }
-    const { error } = await supabase
-      .from("posts")
-      .update(updatePayload)
-      .eq("id", post.id)
-      .eq("user_id", user.id);
-    if (error) {
+    try {
+      await apiPatch(`/posts/${post.id}`, updatePayload);
+    } catch {
       setSaving(false);
       Alert.alert("Error", "Could not update post.");
       return;
@@ -230,22 +216,25 @@ export default function EditPostScreen() {
     const fromContent = getHashtagsFromPostContent(finalTitle ?? "", body.trim() || null);
     const fromInput = hashtags.map((t) => t.toLowerCase().replace(/^#/, ""));
     const tagNames = [...new Set([...fromContent, ...fromInput])].filter(Boolean);
-    await syncPostHashtags(supabase, post.id, tagNames);
+    await syncPostHashtags(null, post.id, tagNames);
     setSaving(false);
     router.back();
   };
 
   const handleDelete = () => {
-    if (!post || !user || !supabase) return;
+    if (!post || !user) return;
     Alert.alert("Delete post?", "This cannot be undone.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          const { error } = await supabase.from("posts").delete().eq("id", post.id).eq("user_id", user.id);
-          if (!error) router.replace("/(tabs)/profile");
-          else Alert.alert("Error", "Could not delete post.");
+          try {
+            await apiDelete(`/posts/${post.id}`);
+            router.replace("/(tabs)/profile");
+          } catch {
+            Alert.alert("Error", "Could not delete post.");
+          }
         },
       },
     ]);

@@ -26,7 +26,7 @@ import { POST_TYPE_LABELS } from "../lib/constants";
 import { formatExactTimestamp } from "../lib/formatTimeAgo";
 import { parseHashtagSegments } from "../lib/hashtags";
 import { reportPostWatch } from "../lib/postWatchTime";
-import supabase from "../lib/supabase";
+import { apiGet, apiPost } from "../lib/api";
 import { FullscreenVideoModal } from "./FullscreenVideoModal";
 import { Card, Avatar, TypeBadge, PostActionBar } from "./ui";
 
@@ -240,78 +240,17 @@ export function PostCard({
   }, [onRepost]);
 
   const fetchComments = useCallback(async (skipLoading = false) => {
-    if (!supabase || !post.id) return;
+    if (!post.id) return;
     if (!skipLoading) setCommentsLoading(true);
-    let rawRows: Record<string, unknown>[] = [];
-    const withParent = await supabase
-      .from("post_comments")
-      .select("id, body, created_at, user_id, parent_id, profiles!user_id(display_name, username, avatar_url)")
-      .eq("post_id", post.id)
-      .order("created_at", { ascending: true });
-    if (withParent.error) {
-      const withoutParent = await supabase
-        .from("post_comments")
-        .select("id, body, created_at, user_id, profiles!user_id(display_name, username, avatar_url)")
-        .eq("post_id", post.id)
-        .order("created_at", { ascending: true });
-      if (withoutParent.error) {
-        if (!skipLoading) setCommentsLoading(false);
-        setComments([]);
-        return;
-      }
-      rawRows = (withoutParent.data ?? []) as Record<string, unknown>[];
-    } else {
-      rawRows = (withParent.data ?? []) as Record<string, unknown>[];
+    try {
+      const data = await apiGet<CommentRow[]>(`/posts/${post.id}/comments`);
+      setComments(data ?? []);
+    } catch {
+      setComments([]);
+    } finally {
+      if (!skipLoading) setCommentsLoading(false);
     }
-    if (!skipLoading) setCommentsLoading(false);
-    const commentIds = rawRows.map((r) => r.id as string);
-    let likeCountByComment: Record<string, number> = {};
-    let likedCommentIds = new Set<string>();
-    let dislikeCountByComment: Record<string, number> = {};
-    let dislikedCommentIds = new Set<string>();
-    if (commentIds.length > 0 && user?.id) {
-      const [likeCountRes, myLikesRes, dislikeCountRes, myDislikesRes] = await Promise.all([
-        supabase.from("comment_likes").select("comment_id").in("comment_id", commentIds),
-        supabase.from("comment_likes").select("comment_id").eq("user_id", user.id).in("comment_id", commentIds),
-        supabase.from("comment_dislikes").select("comment_id").in("comment_id", commentIds),
-        supabase.from("comment_dislikes").select("comment_id").eq("user_id", user.id).in("comment_id", commentIds),
-      ]);
-      if (!likeCountRes.error) {
-        (likeCountRes.data ?? []).forEach((r: { comment_id: string }) => {
-          likeCountByComment[r.comment_id] = (likeCountByComment[r.comment_id] ?? 0) + 1;
-        });
-      }
-      if (!myLikesRes.error) {
-        likedCommentIds = new Set((myLikesRes.data ?? []).map((r: { comment_id: string }) => r.comment_id));
-      }
-      if (!dislikeCountRes.error) {
-        (dislikeCountRes.data ?? []).forEach((r: { comment_id: string }) => {
-          dislikeCountByComment[r.comment_id] = (dislikeCountByComment[r.comment_id] ?? 0) + 1;
-        });
-      }
-      if (!myDislikesRes.error) {
-        dislikedCommentIds = new Set((myDislikesRes.data ?? []).map((r: { comment_id: string }) => r.comment_id));
-      }
-    }
-    const rows: CommentRow[] = rawRows.map((r) => {
-      const profiles = r.profiles;
-      const author = Array.isArray(profiles) ? profiles[0] : profiles;
-      const id = r.id as string;
-      return {
-        id,
-        body: r.body as string,
-        created_at: r.created_at as string,
-        user_id: r.user_id as string,
-        parent_id: (r.parent_id as string | null) ?? null,
-        like_count: likeCountByComment[id] ?? 0,
-        is_liked: likedCommentIds.has(id),
-        dislike_count: dislikeCountByComment[id] ?? 0,
-        is_disliked: dislikedCommentIds.has(id),
-        author: (author as CommentRow["author"]) ?? null,
-      };
-    });
-    setComments(rows);
-  }, [post.id, user?.id]);
+  }, [post.id]);
 
   useEffect(() => {
     if (commentModalVisible && post.id) fetchComments();
@@ -324,113 +263,70 @@ export function PostCard({
 
   const submitComment = useCallback(async () => {
     const trimmed = commentBody.trim();
-    if (!trimmed || commentSubmitting || !user?.id || !supabase) return;
+    if (!trimmed || commentSubmitting || !user?.id) return;
     setCommentSubmitting(true);
-    const insertPayload: { post_id: string; user_id: string; body: string; parent_id?: string } = {
-      post_id: post.id,
-      user_id: user.id,
-      body: trimmed,
-    };
-    if (replyingToCommentId) insertPayload.parent_id = replyingToCommentId;
-    const { error } = await supabase.from("post_comments").insert(insertPayload);
-    setCommentSubmitting(false);
-    if (error) return;
-    setCommentBody("");
-    setReplyingToCommentId(null);
-    onCommentAdded?.();
-    fetchComments();
+    try {
+      await apiPost(`/posts/${post.id}/comments`, {
+        body: trimmed,
+        parentId: replyingToCommentId ?? undefined,
+      });
+      setCommentBody("");
+      setReplyingToCommentId(null);
+      onCommentAdded?.();
+      fetchComments();
+    } catch {
+      // ignore
+    } finally {
+      setCommentSubmitting(false);
+    }
   }, [commentBody, commentSubmitting, user?.id, post.id, replyingToCommentId, onCommentAdded, fetchComments]);
 
   const toggleCommentLike = useCallback(
     async (commentId: string) => {
-      if (!supabase || !user?.id) return;
-      const c = comments.find((x) => x.id === commentId);
-      if (!c) return;
-      const nextLiked = !c.is_liked;
-      const prevState = comments.map((x) => (x.id === commentId ? { ...x } : x));
-      if (nextLiked && c.is_disliked) {
-        const { error: delErr } = await supabase.from("comment_dislikes").delete().eq("user_id", user.id).eq("comment_id", commentId);
-        if (delErr) return;
-        setComments((prev) =>
-          prev.map((x) =>
-            x.id === commentId
-              ? {
-                  ...x,
-                  is_liked: true,
-                  is_disliked: false,
-                  like_count: x.like_count + 1,
-                  dislike_count: Math.max(0, x.dislike_count - 1),
-                }
-              : x
-          )
+      if (!user?.id) return;
+      try {
+        const res = await apiPost<{ liked: boolean; like_count: number; dislike_count: number }>(
+          `/posts/${post.id}/comments/${commentId}/like`,
+          {}
         );
-      } else {
-        setComments((prev) =>
-          prev.map((x) =>
-            x.id === commentId
-              ? { ...x, is_liked: nextLiked, like_count: Math.max(0, x.like_count + (nextLiked ? 1 : -1)) }
-              : x
-          )
-        );
-      }
-      const { error } = nextLiked
-        ? await supabase.from("comment_likes").insert({ user_id: user.id, comment_id: commentId })
-        : await supabase.from("comment_likes").delete().eq("user_id", user.id).eq("comment_id", commentId);
-      if (error) {
-        setComments(prevState);
-      } else {
-        fetchComments(true);
+        if (res) {
+          setComments((prev) =>
+            prev.map((x) =>
+              x.id === commentId
+                ? { ...x, is_liked: res.liked, is_disliked: false, like_count: res.like_count, dislike_count: res.dislike_count }
+                : x
+            )
+          );
+        }
+      } catch {
+        // ignore
       }
     },
-    [user?.id, comments, fetchComments]
+    [user?.id, post.id]
   );
 
   const toggleCommentDislike = useCallback(
     async (commentId: string) => {
-      if (!supabase || !user?.id) return;
-      const c = comments.find((x) => x.id === commentId);
-      if (!c) return;
-      const nextDisliked = !c.is_disliked;
-      const prevState = comments.map((x) => (x.id === commentId ? { ...x } : x));
-      if (nextDisliked && c.is_liked) {
-        const { error: delErr } = await supabase.from("comment_likes").delete().eq("user_id", user.id).eq("comment_id", commentId);
-        if (delErr) return;
-        setComments((prev) =>
-          prev.map((x) =>
-            x.id === commentId
-              ? {
-                  ...x,
-                  is_disliked: true,
-                  is_liked: false,
-                  dislike_count: x.dislike_count + 1,
-                  like_count: Math.max(0, x.like_count - 1),
-                }
-              : x
-          )
+      if (!user?.id) return;
+      try {
+        const res = await apiPost<{ disliked: boolean; like_count: number; dislike_count: number }>(
+          `/posts/${post.id}/comments/${commentId}/dislike`,
+          {}
         );
-      } else {
-        setComments((prev) =>
-          prev.map((x) =>
-            x.id === commentId
-              ? {
-                  ...x,
-                  is_disliked: nextDisliked,
-                  dislike_count: Math.max(0, x.dislike_count + (nextDisliked ? 1 : -1)),
-                }
-              : x
-          )
-        );
-      }
-      const { error } = nextDisliked
-        ? await supabase.from("comment_dislikes").insert({ user_id: user.id, comment_id: commentId })
-        : await supabase.from("comment_dislikes").delete().eq("user_id", user.id).eq("comment_id", commentId);
-      if (error) {
-        setComments(prevState);
-      } else {
-        fetchComments(true);
+        if (res) {
+          setComments((prev) =>
+            prev.map((x) =>
+              x.id === commentId
+                ? { ...x, is_disliked: res.disliked, is_liked: false, like_count: res.like_count, dislike_count: res.dislike_count }
+                : x
+            )
+          );
+        }
+      } catch {
+        // ignore
       }
     },
-    [user?.id, comments, fetchComments]
+    [user?.id, post.id]
   );
 
   const topLevelComments = comments.filter((c) => !c.parent_id);

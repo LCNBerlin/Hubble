@@ -37,7 +37,7 @@ import {
 } from "../../lib/location";
 import { uploadPostMedia } from "../../lib/postUpload";
 import { createRevenueSplit, getProfileIdByUsername } from "../../lib/revenue-splits";
-import supabase from "../../lib/supabase";
+import { apiPost } from "../../lib/api";
 import { productToRow, rowToProduct } from "../../lib/supabase-products";
 
 const POST_OPTIONS: { id: PostType; label: string; icon: string; disabled?: boolean }[] = [
@@ -1835,13 +1835,8 @@ export default function CreateScreen() {
   const handleSelectProduct = (type: ProductType) => setCreateProductType(type);
 
   const handleSubmitEvent = async (data: { title: string; description: string; date: number }) => {
-    if (user?.id && supabase) {
-      await supabase.from("events").insert({
-        user_id: user.id,
-        title: data.title,
-        description: data.description || null,
-        date: data.date,
-      });
+    if (user?.id) {
+      await apiPost("/events", { title: data.title, description: data.description || null, date: data.date }).catch(() => {});
     }
     addEvent({ title: data.title, description: data.description || undefined, date: data.date });
     setCategoryModal(null);
@@ -1902,30 +1897,25 @@ export default function CreateScreen() {
       pollOptions: pollOpts,
     });
     setCreatePostType(null);
-    if (user && supabase) {
+    if (user) {
       const insertPayload: Record<string, unknown> = {
-        user_id: user.id,
         type: createPostType,
         title: title ?? null,
         body: body ?? null,
-        media_uri: finalMediaUri ?? null,
+        mediaUri: finalMediaUri ?? null,
       };
-      if (thumbnailUrl) insertPayload.thumbnail_uri = thumbnailUrl;
+      if (thumbnailUrl) insertPayload.thumbnailUri = thumbnailUrl;
       if (data.lat != null) insertPayload.lat = data.lat;
       if (data.lng != null) insertPayload.lng = data.lng;
       if (data.place_name != null) insertPayload.place_name = data.place_name;
-      if (data.scheduledAt != null) insertPayload.scheduled_at = new Date(data.scheduledAt).toISOString();
-      if (pollOpts?.length) insertPayload.poll_options = pollOpts;
-      const { data: inserted, error } = await supabase
-        .from("posts")
-        .insert(insertPayload)
-        .select("id")
-        .single();
-      if (!error && inserted?.id) {
+      if (data.scheduledAt != null) insertPayload.scheduledAt = data.scheduledAt;
+      if (pollOpts?.length) insertPayload.pollOptions = pollOpts;
+      const inserted = await apiPost<{ id: string } | null>("/posts", insertPayload).catch(() => null);
+      if (inserted?.id) {
         const fromContent = getHashtagsFromPostContent(title ?? "", body ?? null);
         const fromInput = (data.hashtags ?? []).map((t) => t.toLowerCase().replace(/^#/, ""));
         const tagNames = [...new Set([...fromContent, ...fromInput])].filter(Boolean);
-        await syncPostHashtags(supabase, inserted.id, tagNames);
+        await syncPostHashtags(null, inserted.id, tagNames);
       }
     }
     Alert.alert(
@@ -1971,20 +1961,18 @@ export default function CreateScreen() {
       creatorId: user?.id ?? undefined,
       goLiveAt: data.goLiveAt,
     };
-    if (!user?.id || !supabase) {
+    if (!user?.id) {
       Alert.alert("Error", "You must be signed in to create a product.");
       return;
     }
     const row = productToRow({ ...payload, creatorId: user.id }, user.id);
-    const { data: inserted, error } = await supabase
-      .from("products")
-      .insert(row)
-      .select()
-      .single();
-    if (error) {
+    let inserted: Record<string, unknown> | null = null;
+    try {
+      inserted = await apiPost<Record<string, unknown>>("/products", row);
+    } catch (e) {
       Alert.alert(
         "Could not create product",
-        error.message || "Something went wrong. Check that all fields are valid and try again."
+        e instanceof Error ? e.message : "Something went wrong. Check that all fields are valid and try again."
       );
       return;
     }

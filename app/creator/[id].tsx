@@ -23,7 +23,7 @@ import { useContent } from "../../context/ContentContext";
 import { useProfile } from "../../context/ProfileContext";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
 import { CREATOR_AVATAR } from "../../lib/constants";
-import supabase from "../../lib/supabase";
+import { apiGet } from "../../lib/api";
 import { rowToProduct } from "../../lib/supabase-products";
 import type { PostRow, ProfileRow } from "../../lib/supabase-profiles";
 
@@ -407,27 +407,19 @@ export default function CreatorProfileScreen() {
   }, [id, user?.id, setViewedUser]);
 
   const fetchProfileAndPosts = useCallback(async () => {
-    if (!supabase || !id) return;
-    const [profileRes, postsRes] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", id).single(),
-      supabase.from("posts").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(50),
+    if (!id) return;
+    const [profile, posts] = await Promise.all([
+      apiGet<ProfileRow>(`/profiles/${id}`).catch(() => null),
+      apiGet<PostRow[]>(`/posts/by-user/${id}`).catch(() => []),
     ]);
-    if (profileRes.data) setProfile(profileRes.data as ProfileRow);
-    else setProfile(null);
-    if (postsRes.data) setPosts((postsRes.data as PostRow[]) ?? []);
-    else setPosts([]);
+    setProfile(profile);
+    setPosts(posts ?? []);
   }, [id]);
 
   const fetchCreatorProducts = useCallback(async () => {
-    if (!supabase || !id) return;
-    const { data } = await supabase
-      .from("products")
-      .select("*")
-      .eq("creator_id", id)
-      .order("created_at", { ascending: false });
-    if (data) {
-      setCreatorProducts(data.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-    } else setCreatorProducts([]);
+    if (!id) return;
+    const data = await apiGet<unknown[]>(`/products/by-creator/${id}`).catch(() => []);
+    setCreatorProducts((data ?? []).map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
   }, [id]);
 
   const load = useCallback(async () => {

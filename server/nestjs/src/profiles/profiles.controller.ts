@@ -66,6 +66,16 @@ export class ProfilesController {
     ]).then(([postIds, productIds, blockedIds]) => ({ postIds, productIds, blockedIds }));
   }
 
+  @Get("me/saved-posts")
+  getSavedPosts(@CurrentUser() user: JwtUser) {
+    return this.profiles.getSavedPostsFull(user.sub);
+  }
+
+  @Get("me/saved-products")
+  getSavedProducts(@CurrentUser() user: JwtUser) {
+    return this.profiles.getSavedProductsFull(user.sub);
+  }
+
   @Post("me/save-post/:postId")
   toggleSavePost(@CurrentUser() user: JwtUser, @Param("postId") postId: string) {
     return this.profiles.toggleSavePost(user.sub, postId);

@@ -19,9 +19,9 @@ import { useAuth } from "../../context/AuthContext";
 import type { PriceTier, ProductType, ServiceSlot } from "../../context/ContentContext";
 import { useContent } from "../../context/ContentContext";
 import { useProfile } from "../../context/ProfileContext";
-import { createRevenueSplit, getProfileIdByUsername, getRevenueSplitsForOwner } from "../../lib/revenue-splits";
+import { createRevenueSplit, deleteRevenueSplitsForTarget, getProfileIdByUsername, getRevenueSplitsForOwner } from "../../lib/revenue-splits";
 import { productToRow, rowToProduct } from "../../lib/supabase-products";
-import supabase from "../../lib/supabase";
+import { apiGet, apiPatch, apiDelete } from "../../lib/api";
 
 const PRODUCT_CATEGORIES = [
   "Art",
@@ -91,18 +91,17 @@ export default function EditProductScreen() {
   const [revenueSplits, setRevenueSplits] = useState<{ partnerUsername: string; splitPercent: string }[]>([]);
 
   const fetchProduct = useCallback(async () => {
-    if (!supabase || !id || !user?.id) {
+    if (!id || !user?.id) {
       setLoading(false);
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase.from("products").select("*").eq("id", id).single();
-    if (error || !data) {
+    const row = await apiGet<Record<string, unknown>>(`/products/${id}`).catch(() => null);
+    if (!row) {
       setProduct(null);
       setLoading(false);
       return;
     }
-    const row = data as Record<string, unknown>;
     if (row.creator_id !== user.id) {
       setProduct(null);
       setLoading(false);
@@ -193,7 +192,7 @@ export default function EditProductScreen() {
   const totalSplitPercent = revenueSplits.reduce((sum, s) => sum + (parseInt(s.splitPercent, 10) || 0), 0);
 
   const handleSave = async () => {
-    if (!product || !user?.id || !supabase) return;
+    if (!product || !user?.id) return;
     if (!title.trim()) {
       Alert.alert("Missing title", "Please enter a product title.");
       return;
@@ -221,7 +220,7 @@ export default function EditProductScreen() {
       price: price.trim() || undefined,
       mediaUri: mediaUri ?? undefined,
       coverUri: isDigital ? (coverImageUri ?? undefined) : undefined,
-      mediaMimeType: mediaMimeType ?? product.mediaMimeType ?? undefined,
+      mediaMimeType: mediaMimeType ?? undefined,
       interval: product.type === "membership" && interval ? interval : undefined,
       priceTiers: priceTiers.length > 0 ? priceTiers : undefined,
       serviceSlots: serviceSlots.length > 0 ? serviceSlots : undefined,
@@ -231,14 +230,11 @@ export default function EditProductScreen() {
       tags: tags.length > 0 ? tags : undefined,
     };
     const row = productToRow(payload, user.id);
-    const { error } = await supabase
-      .from("products")
-      .update(row)
-      .eq("id", product.id)
-      .eq("creator_id", user.id);
-    if (error) {
+    try {
+      await apiPatch(`/products/${product.id}`, row);
+    } catch (e) {
       setSaving(false);
-      Alert.alert("Error", error.message || "Could not update product.");
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not update product.");
       return;
     }
     const parsedSplits = revenueSplits
@@ -252,12 +248,7 @@ export default function EditProductScreen() {
       Alert.alert("Invalid splits", "Total partner share cannot exceed 99%.");
       return;
     }
-    await supabase
-      .from("revenue_splits")
-      .delete()
-      .eq("owner_id", user.id)
-      .eq("target_type", "product")
-      .eq("target_id", product.id);
+    await deleteRevenueSplitsForTarget("product", product.id).catch(() => {});
     for (const s of parsedSplits) {
       const partnerId = await getProfileIdByUsername(s.partnerUsername);
       if (partnerId) {
@@ -290,19 +281,16 @@ export default function EditProductScreen() {
   };
 
   const handleDelete = () => {
-    if (!product || !user?.id || !supabase) return;
+    if (!product || !user?.id) return;
     Alert.alert("Delete product?", "This cannot be undone.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          const { error } = await supabase
-            .from("products")
-            .delete()
-            .eq("id", product.id)
-            .eq("creator_id", user.id);
-          if (error) {
+          try {
+            await apiDelete(`/products/${product.id}`);
+          } catch {
             Alert.alert("Error", "Could not delete product.");
             return;
           }
