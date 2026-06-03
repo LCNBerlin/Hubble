@@ -33,7 +33,7 @@ import {
   Accuracy as LocationAccuracy,
   haversineMiles,
 } from "../../lib/location";
-import supabase from "../../lib/supabase";
+import { apiGet } from "../../lib/api";
 import { rowToProduct } from "../../lib/supabase-products";
 import { getViewedProducts } from "../../lib/viewed-products";
 import { useStripeContext } from "../../context/StripeContext";
@@ -155,32 +155,14 @@ export default function MarketplaceScreen() {
   const { profile } = useProfile();
 
   const fetchMarketplaceProducts = useCallback(async (append = false) => {
-    if (!supabase) {
-      if (!append) setProducts([]);
-      setProductsLoading(false);
-      return;
-    }
     const from = append ? productsOffsetRef.current : 0;
-    const to = from + PRODUCTS_PAGE_SIZE - 1;
-    if (append && productsOffsetRef.current > 0 && from > to) return;
+    if (append && productsOffsetRef.current > 0 && from < 0) return;
     setProductsLoading(true);
     try {
-      let query = supabase
-        .from("products")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .range(from, to);
-      if (selectedCommunityId) {
-        query = supabase
-          .from("products")
-          .select("*")
-          .eq("creator_id", selectedCommunityId)
-          .order("created_at", { ascending: false })
-          .range(from, to);
-      }
-      const { data } = await query;
-      const rows = data ?? [];
-      const mapped = rows.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0]));
+      const params = new URLSearchParams({ limit: String(PRODUCTS_PAGE_SIZE), offset: String(from) });
+      if (selectedCommunityId) params.set("creatorId", selectedCommunityId);
+      const rows = await apiGet<Record<string, unknown>[]>(`/products?${params.toString()}`);
+      const mapped = rows.map((row) => rowToProduct(row as Parameters<typeof rowToProduct>[0]));
       if (append) {
         setProducts((prev) => [...prev, ...mapped]);
       } else {
@@ -215,20 +197,18 @@ export default function MarketplaceScreen() {
     [products]
   );
   useEffect(() => {
-    if (!supabase || !creatorIdsForLocation) {
+    if (!creatorIdsForLocation) {
       setCreatorLocations({});
       setCreatorLatLng({});
       return;
     }
-    const ids = creatorIdsForLocation.split(",").filter(Boolean);
-    supabase
-      .from("profiles")
-      .select("id, location, lat, lng")
-      .in("id", ids)
-      .then(({ data }) => {
+    apiGet<{ id: string; location?: string | null; lat?: number | null; lng?: number | null }[]>(
+      `/profiles/by-ids?ids=${creatorIdsForLocation}`
+    )
+      .then((rows) => {
         const nextLoc: Record<string, string> = {};
         const nextLatLng: Record<string, { lat: number; lng: number }> = {};
-        (data ?? []).forEach((row: { id: string; location?: string | null; lat?: number | null; lng?: number | null }) => {
+        rows.forEach((row) => {
           const loc = row.location?.trim();
           if (loc) nextLoc[row.id] = loc;
           if (row.lat != null && row.lng != null && !Number.isNaN(row.lat) && !Number.isNaN(row.lng)) {
@@ -263,17 +243,12 @@ export default function MarketplaceScreen() {
   }, []);
 
   useEffect(() => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setFollowingIds([]);
       return;
     }
-    supabase
-      .from("follows")
-      .select("following_id")
-      .eq("follower_id", user.id)
-      .then(({ data }) => {
-        setFollowingIds((data ?? []).map((r: { following_id: string }) => r.following_id));
-      })
+    apiGet<string[]>("/profiles/me/following-ids")
+      .then(setFollowingIds)
       .catch(() => setFollowingIds([]));
   }, [user?.id]);
 
@@ -282,17 +257,24 @@ export default function MarketplaceScreen() {
     [products]
   );
   useEffect(() => {
-    if (!supabase || productCreatorIds.length === 0) {
+    if (productCreatorIds.length === 0) {
       setTopRatedCreatorIds([]);
       return;
     }
-    supabase
-      .from("profiles")
-      .select("id")
-      .in("id", productCreatorIds)
-      .or("reputation_score.gte.4,verified_tier.eq.verified,verified_tier.eq.enterprise")
-      .then(({ data }) => {
-        setTopRatedCreatorIds((data ?? []).map((r: { id: string }) => r.id));
+    apiGet<{ id: string; reputation_score?: number | null; verified_tier?: string | null }[]>(
+      `/profiles/by-ids?ids=${productCreatorIds.join(",")}`
+    )
+      .then((rows) => {
+        setTopRatedCreatorIds(
+          rows
+            .filter(
+              (r) =>
+                (typeof r.reputation_score === "number" && r.reputation_score >= 4) ||
+                r.verified_tier === "verified" ||
+                r.verified_tier === "enterprise"
+            )
+            .map((r) => r.id)
+        );
       })
       .catch(() => setTopRatedCreatorIds([]));
   }, [productCreatorIds.join(",")]);
@@ -490,27 +472,19 @@ export default function MarketplaceScreen() {
       setCreatorProfileFilterMap({});
       return;
     }
-    supabase
-      .from("profiles")
-      .select("id, staking_badge, verified_tier, reputation_score")
-      .in("id", creatorIdsForFilterFetch)
-      .then(({ data }) => {
+    apiGet<{ id: string; staking_badge?: boolean; verified_tier?: string | null; reputation_score?: number | null }[]>(
+      `/profiles/by-ids?ids=${creatorIdsForFilterFetch.join(",")}`
+    )
+      .then((rows) => {
         const next: Record<string, CreatorProfileFilterRow> = {};
-        (data ?? []).forEach(
-          (row: {
-            id: string;
-            staking_badge?: boolean;
-            verified_tier?: string | null;
-            reputation_score?: number | null;
-          }) => {
-            const tier = row.verified_tier === "verified" || row.verified_tier === "enterprise" ? row.verified_tier : "none";
-            next[row.id] = {
-              verifiedTier: tier as "none" | "verified" | "enterprise",
-              reputationScore: typeof row.reputation_score === "number" ? row.reputation_score : 0,
-              stakingBadge: row.staking_badge === true,
-            };
-          }
-        );
+        rows.forEach((row) => {
+          const tier = row.verified_tier === "verified" || row.verified_tier === "enterprise" ? row.verified_tier : "none";
+          next[row.id] = {
+            verifiedTier: tier as "none" | "verified" | "enterprise",
+            reputationScore: typeof row.reputation_score === "number" ? row.reputation_score : 0,
+            stakingBadge: row.staking_badge === true,
+          };
+        });
         setCreatorProfileFilterMap(next);
       })
       .catch(() => setCreatorProfileFilterMap({}));
@@ -557,21 +531,19 @@ export default function MarketplaceScreen() {
     const slice = rankedProducts.slice(0, displayedCount);
     const creatorIds = [...new Set(slice.map((p) => p.creatorId).filter(Boolean))] as string[];
     if (creatorIds.length === 0) return;
-    supabase
-      .from("profiles")
-      .select("id, display_name, username, avatar_url")
-      .in("id", creatorIds)
-      .then(({ data }) => {
-        const next: Record<string, CreatorInfo> = {};
-        (data ?? []).forEach((row: { id: string; display_name?: string | null; username: string; avatar_url?: string | null }) => {
-          next[row.id] = {
-            displayName: row.display_name,
-            username: row.username ?? "",
-            avatarUrl: row.avatar_url,
-          };
-        });
-        setCreatorMap((prev) => ({ ...prev, ...next }));
+    apiGet<{ id: string; display_name?: string | null; username: string; avatar_url?: string | null }[]>(
+      `/profiles/by-ids?ids=${creatorIds.join(",")}`
+    ).then((rows) => {
+      const next: Record<string, CreatorInfo> = {};
+      rows.forEach((row) => {
+        next[row.id] = {
+          displayName: row.display_name,
+          username: row.username ?? "",
+          avatarUrl: row.avatar_url,
+        };
       });
+      setCreatorMap((prev) => ({ ...prev, ...next }));
+    });
   }, [rankedProducts, displayedCount]);
 
   const trendingProducts = useMemo(
