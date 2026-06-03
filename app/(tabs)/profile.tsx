@@ -30,8 +30,7 @@ import { useEventsByUserQuery } from "../../hooks/useEventsQuery";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
 import { CREATOR_AVATAR } from "../../lib/constants";
 import { rowToProduct } from "../../lib/supabase-products";
-import { apiGet } from "../../lib/api";
-import supabase from "../../lib/supabase";
+import { apiGet, apiDelete } from "../../lib/api";
 
 type ProfileTabId = "posts" | "products" | "events" | "saved";
 type ProfilePost = Post & { createdAt?: string };
@@ -828,11 +827,10 @@ export default function ProfileScreen() {
 
   const handleDeletePost = useCallback(
     async (postId: string) => {
-      if (!supabase) return;
-      await supabase.from("posts").delete().eq("id", postId).eq("user_id", user?.id);
+      await apiDelete(`/posts/${postId}`);
       setMyPosts((prev) => prev.filter((p) => p.id !== postId));
     },
-    [user?.id]
+    []
   );
 
   const handleDeleteProduct = useCallback(
