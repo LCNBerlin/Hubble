@@ -115,6 +115,16 @@ CREATE TABLE IF NOT EXISTS post_hashtags (
 );
 CREATE INDEX IF NOT EXISTS post_hashtags_hashtag_id_idx ON post_hashtags(hashtag_id);
 
+CREATE TABLE IF NOT EXISTS events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  title varchar NOT NULL,
+  description text,
+  date timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS events_user_id_idx ON events(user_id);
+
 CREATE TABLE IF NOT EXISTS comment_likes (
   comment_id uuid NOT NULL REFERENCES post_comments(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,

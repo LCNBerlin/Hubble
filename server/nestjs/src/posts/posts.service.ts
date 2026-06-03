@@ -45,9 +45,21 @@ export class PostsService {
 
   async create(userId: string, data: Record<string, unknown>): Promise<unknown> {
     const rows = await this.db.query(
-      `INSERT INTO posts (user_id, title, body, post_type, media_uri, media_type, is_sponsored, scheduled_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [userId, data.title, data.body, data.postType || "text", data.mediaUri || null, data.mediaType || null, data.isSponsored || false, data.scheduledAt || null]
+      `INSERT INTO posts (user_id, type, title, body, media_uri, media_type, thumbnail_uri, is_sponsored, place_name, scheduled_at, poll_options)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      [
+        userId,
+        data.type ?? "blog",
+        data.title ?? null,
+        data.body ?? null,
+        data.mediaUri ?? null,
+        data.mediaType ?? null,
+        data.thumbnailUri ?? null,
+        data.isSponsored ?? false,
+        data.placeName ?? null,
+        data.scheduledAt ?? null,
+        data.pollOptions != null ? JSON.stringify(data.pollOptions) : null,
+      ]
     );
     return rows[0];
   }
