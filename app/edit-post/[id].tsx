@@ -27,7 +27,7 @@ import {
   Accuracy as LocationAccuracy,
   requestForegroundPermissionsAsync,
 } from "../../lib/location";
-import supabase from "../../lib/supabase";
+import { apiGet, apiPatch, apiDelete } from "../../lib/api";
 
 async function pickImage(): Promise<{ uri: string; mimeType?: string | null } | null> {
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -103,43 +103,31 @@ export default function EditPostScreen() {
   const removeHashtag = (tag: string) => setHashtags((prev) => prev.filter((t) => t !== tag));
 
   const fetchPost = useCallback(async () => {
-    if (!supabase || !id) return;
+    if (!id) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("posts")
-      .select("id, user_id, type, title, body, media_uri, lat, lng, place_name")
-      .eq("id", id)
-      .single();
-    if (error || !data) {
-      setLoading(false);
+    try {
+      const row = await apiGet<PostRow>(`/posts/${id}`);
+      if (user && row.user_id !== user.id) {
+        setPost(null);
+        return;
+      }
+      setPost(row);
+      setTitle(row.title ?? "");
+      setBody(row.body ?? "");
+      setMediaUri(row.media_uri ?? null);
+      setMediaMimeType(null);
+      setLocation(
+        row.lat != null && row.lng != null
+          ? { lat: row.lat, lng: row.lng, place_name: row.place_name ?? undefined }
+          : null
+      );
+      const tagNames = await apiGet<string[]>(`/posts/${id}/hashtags`);
+      setHashtags(tagNames.map((t) => t.toLowerCase()));
+    } catch {
       setPost(null);
-      return;
-    }
-    const row = data as PostRow;
-    if (user && row.user_id !== user.id) {
+    } finally {
       setLoading(false);
-      setPost(null);
-      return;
     }
-    setPost(row);
-    setTitle(row.title ?? "");
-    setBody(row.body ?? "");
-    setMediaUri(row.media_uri ?? null);
-    setMediaMimeType(null);
-    setLocation(
-      row.lat != null && row.lng != null
-        ? { lat: row.lat, lng: row.lng, place_name: row.place_name ?? undefined }
-        : null
-    );
-    const { data: phData } = await supabase
-      .from("post_hashtags")
-      .select("hashtags(name)")
-      .eq("post_id", id);
-    const tagNames = (phData ?? [])
-      .map((r: { hashtags: { name: string } | null }) => r.hashtags?.name)
-      .filter(Boolean) as string[];
-    setHashtags(tagNames.map((t) => t.toLowerCase()));
-    setLoading(false);
   }, [id, user?.id]);
 
   useEffect(() => {
@@ -190,7 +178,7 @@ export default function EditPostScreen() {
   };
 
   const handleSave = async () => {
-    if (!post || !user || !supabase) return;
+    if (!post || !user) return;
     const finalTitle = title.trim() || null;
     if (needsUpload && !mediaUri) return;
     setSaving(true);
@@ -205,49 +193,41 @@ export default function EditPostScreen() {
         return;
       }
     }
-    const updatePayload: Record<string, unknown> = {
-      title: finalTitle ?? null,
-      body: body.trim() || null,
-      media_uri: finalMediaUri ?? null,
-    };
-    if (location) {
-      updatePayload.lat = location.lat;
-      updatePayload.lng = location.lng;
-      updatePayload.place_name = location.place_name ?? null;
-    } else {
-      updatePayload.lat = null;
-      updatePayload.lng = null;
-      updatePayload.place_name = null;
-    }
-    const { error } = await supabase
-      .from("posts")
-      .update(updatePayload)
-      .eq("id", post.id)
-      .eq("user_id", user.id);
-    if (error) {
+    try {
+      await apiPatch(`/posts/${post.id}`, {
+        title: finalTitle ?? null,
+        body: body.trim() || null,
+        mediaUri: finalMediaUri ?? null,
+        lat: location?.lat ?? null,
+        lng: location?.lng ?? null,
+        placeName: location?.place_name ?? null,
+      });
+      const fromContent = getHashtagsFromPostContent(finalTitle ?? "", body.trim() || null);
+      const fromInput = hashtags.map((t) => t.toLowerCase().replace(/^#/, ""));
+      const tagNames = [...new Set([...fromContent, ...fromInput])].filter(Boolean);
+      await syncPostHashtags(null, post.id, tagNames);
+      router.back();
+    } catch (err) {
+      Alert.alert("Error", err instanceof Error ? err.message : "Could not update post.");
+    } finally {
       setSaving(false);
-      Alert.alert("Error", "Could not update post.");
-      return;
     }
-    const fromContent = getHashtagsFromPostContent(finalTitle ?? "", body.trim() || null);
-    const fromInput = hashtags.map((t) => t.toLowerCase().replace(/^#/, ""));
-    const tagNames = [...new Set([...fromContent, ...fromInput])].filter(Boolean);
-    await syncPostHashtags(supabase, post.id, tagNames);
-    setSaving(false);
-    router.back();
   };
 
   const handleDelete = () => {
-    if (!post || !user || !supabase) return;
+    if (!post || !user) return;
     Alert.alert("Delete post?", "This cannot be undone.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          const { error } = await supabase.from("posts").delete().eq("id", post.id).eq("user_id", user.id);
-          if (!error) router.replace("/(tabs)/profile");
-          else Alert.alert("Error", "Could not delete post.");
+          try {
+            await apiDelete(`/posts/${post.id}`);
+            router.replace("/(tabs)/profile");
+          } catch {
+            Alert.alert("Error", "Could not delete post.");
+          }
         },
       },
     ]);

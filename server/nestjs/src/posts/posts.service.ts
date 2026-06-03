@@ -52,10 +52,47 @@ export class PostsService {
     if (!post[0]) throw new NotFoundException("Post not found");
     if (post[0].user_id !== userId) throw new ForbiddenException("Not your post");
     const rows = await this.db.query(
-      `UPDATE posts SET title = COALESCE($1, title), body = COALESCE($2, body), updated_at = NOW() WHERE id = $3 RETURNING *`,
-      [data.title, data.body, postId]
+      `UPDATE posts SET
+        title = COALESCE($1, title),
+        body = COALESCE($2, body),
+        media_uri = $3,
+        lat = $4,
+        lng = $5,
+        place_name = $6,
+        updated_at = NOW()
+       WHERE id = $7 RETURNING *`,
+      [data.title ?? null, data.body ?? null, data.mediaUri ?? null, data.lat ?? null, data.lng ?? null, data.placeName ?? null, postId]
     );
     return rows[0];
+  }
+
+  async getHashtags(postId: string): Promise<string[]> {
+    const rows = await this.db.query(
+      `SELECT h.name FROM hashtags h JOIN post_hashtags ph ON ph.hashtag_id = h.id WHERE ph.post_id = $1`,
+      [postId]
+    );
+    return rows.map((r: { name: string }) => r.name);
+  }
+
+  async syncHashtags(postId: string, userId: string, tagNames: string[]): Promise<void> {
+    const post = await this.db.query(`SELECT user_id FROM posts WHERE id = $1`, [postId]);
+    if (!post[0]) throw new NotFoundException("Post not found");
+    if (post[0].user_id !== userId) throw new ForbiddenException("Not your post");
+    await this.db.query(`DELETE FROM post_hashtags WHERE post_id = $1`, [postId]);
+    for (const name of tagNames) {
+      const lname = name.toLowerCase();
+      await this.db.query(
+        `INSERT INTO hashtags (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
+        [lname]
+      );
+      const htag = await this.db.query(`SELECT id FROM hashtags WHERE name = $1`, [lname]);
+      if (htag[0]) {
+        await this.db.query(
+          `INSERT INTO post_hashtags (post_id, hashtag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [postId, htag[0].id]
+        );
+      }
+    }
   }
 
   async delete(postId: string, userId: string): Promise<void> {

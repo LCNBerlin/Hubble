@@ -53,6 +53,17 @@ export class PostsController {
     return this.posts.delete(id, user.sub);
   }
 
+  @Get(":id/hashtags")
+  getHashtags(@Param("id") id: string) {
+    return this.posts.getHashtags(id);
+  }
+
+  @Post(":id/hashtags")
+  @HttpCode(204)
+  syncHashtags(@Param("id") id: string, @CurrentUser() user: JwtUser, @Body() body: { tagNames: string[] }) {
+    return this.posts.syncHashtags(id, user.sub, body.tagNames ?? []);
+  }
+
   @Post(":id/like")
   toggleLike(@Param("id") id: string, @CurrentUser() user: JwtUser) {
     return this.posts.toggleLike(id, user.sub);
