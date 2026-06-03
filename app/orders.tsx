@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
 import { confirmDelivery, formatCentsToPrice } from "../lib/payments";
-import supabase from "../lib/supabase";
+import { apiGet } from "../lib/api";
 
 type OrderRow = {
   id: string;
@@ -46,17 +46,14 @@ export default function OrdersScreen() {
 
   const fetchOrders = useCallback(async () => {
     if (!user?.id) return;
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("buyer_id", user.id)
-      .order("created_at", { ascending: false });
-    if (error) {
+    try {
+      const data = await apiGet<OrderRow[]>("/orders");
+      setOrders(data ?? []);
+    } catch {
       setOrders([]);
-    } else {
-      setOrders((data as OrderRow[]) ?? []);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [user?.id]);
 
   useEffect(() => {
