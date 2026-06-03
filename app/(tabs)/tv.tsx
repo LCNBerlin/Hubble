@@ -17,7 +17,7 @@ import { StationsSection } from "../../components/tv/StationsSection";
 import { MySectionContentView } from "../../components/MySectionContentView";
 import { EmptyState } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
-import { useCommunity } from "../../context/CommunityContext";
+import { useCommunityStore } from "../../store/community-store";
 import { fetchStorageItems, type StorageItem } from "../../lib/owned-items";
 
 type SubView = "browse" | "my";
@@ -66,7 +66,7 @@ export default function TvScreen() {
     cinema: "",
   });
   const { user } = useAuth();
-  const { selectedCommunity, setSelectedCommunityId } = useCommunity();
+  const { selectedCommunity, setSelectedCommunityId } = useCommunityStore();
 
   const activeSearchQuery = searchBySection[SECTION_KEYS[activeIndex]];
   const setActiveSearchQuery = useCallback(

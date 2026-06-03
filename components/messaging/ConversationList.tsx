@@ -8,8 +8,8 @@ import {
   View,
 } from "react-native";
 import { useAuth } from "../../context/AuthContext";
-import { useCommunity } from "../../context/CommunityContext";
-import { useMessaging } from "../../context/MessagingContext";
+import { useCommunityStore } from "../../store/community-store";
+import { useMessagingStore } from "../../store/messaging-store";
 import { useConversations, type ConversationCategory } from "../../hooks/useConversations";
 import type { ConversationWithMeta } from "../../lib/conversations";
 import { ConversationCard } from "./ConversationCard";
@@ -25,8 +25,8 @@ const CATEGORIES: { key: ConversationCategory; label: string }[] = [
 
 export function ConversationList() {
   const { user } = useAuth();
-  const { selectedCommunityId } = useCommunity();
-  const { openChat } = useMessaging();
+  const { selectedCommunityId } = useCommunityStore();
+  const { openChat } = useMessagingStore();
   const {
     conversations,
     loading,

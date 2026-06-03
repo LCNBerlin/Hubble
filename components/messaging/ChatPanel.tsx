@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { useAuth } from "../../context/AuthContext";
-import { useMessaging } from "../../context/MessagingContext";
+import { useMessagingStore } from "../../store/messaging-store";
 import { useMessages } from "../../hooks/useMessages";
 import { fetchConversationPeer } from "../../lib/conversations";
 import type { Message } from "../../lib/conversations";
@@ -13,7 +13,7 @@ import { MessageInputBar } from "./MessageInputBar";
 
 export function ChatPanel() {
   const { user } = useAuth();
-  const { selectedConversationId, view, backToList, openCRM, crmCollapsed } = useMessaging();
+  const { selectedConversationId, view, backToList, openCRM, crmCollapsed } = useMessagingStore();
   const layout = useMessagingLayout(crmCollapsed);
   const { messages, loading, sendMessage } = useMessages(selectedConversationId, user?.id);
   const inputBarRef = useRef<{ submit: () => void } | null>(null);

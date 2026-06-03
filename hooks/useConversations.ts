@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ConversationWithMeta } from "../lib/conversations";
 import { fetchConversations, updateParticipant } from "../lib/conversations";
-import { useMessaging, type ConversationCategory } from "../context/MessagingContext";
+import { useMessagingStore, type ConversationCategory } from "../store/messaging-store";
 
 export type { ConversationCategory };
 
 export function useConversations(userId: string | undefined) {
   const [conversations, setConversations] = useState<ConversationWithMeta[]>([]);
   const [loading, setLoading] = useState(true);
-  const { category, setCategory, search, setSearch } = useMessaging();
+  const { category, setCategory, search, setSearch } = useMessagingStore();
 
   const load = useCallback(async () => {
     if (!userId) {

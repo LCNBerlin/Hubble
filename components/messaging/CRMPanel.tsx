@@ -7,7 +7,7 @@ import {
   View,
 } from "react-native";
 import { useAuth } from "../../context/AuthContext";
-import { useMessaging } from "../../context/MessagingContext";
+import { useMessagingStore } from "../../store/messaging-store";
 import { useCRMData, type CRMOrder } from "../../hooks/useCRMData";
 import { Avatar } from "../ui/Avatar";
 
@@ -17,7 +17,7 @@ function centsToDollars(cents: number): string {
 
 export function CRMPanel() {
   const { user } = useAuth();
-  const { selectedConversationId, closeCRM, setCrmCollapsed } = useMessaging();
+  const { selectedConversationId, closeCRM, setCrmCollapsed } = useMessagingStore();
   const crm = useCRMData(selectedConversationId, user?.id);
   const [selectedOrder, setSelectedOrder] = useState<CRMOrder | null>(null);
 

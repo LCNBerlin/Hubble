@@ -22,9 +22,9 @@ import type { CreatorInfo } from "../../components/ProductCard";
 import { EmptyState } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
 import { useCart } from "../../context/CartContext";
-import { useCommunity } from "../../context/CommunityContext";
+import { useCommunityStore } from "../../store/community-store";
 import { useContent } from "../../context/ContentContext";
-import { useProfile } from "../../context/ProfileContext";
+import { useMyProfileQuery } from "../../hooks/useProfileQuery";
 import type { Product, ProductType } from "../../context/ContentContext";
 import { rankProducts } from "../../lib/discovery";
 import {
@@ -105,7 +105,7 @@ export default function MarketplaceScreen() {
   const [displayedCount, setDisplayedCount] = useState(DISCOVERY_PAGE_SIZE);
   const [creatorMap, setCreatorMap] = useState<Record<string, CreatorInfo>>({});
   const { user } = useAuth();
-  const { selectedCommunityId, selectedCommunity, setSelectedCommunityId } = useCommunity();
+  const { selectedCommunityId, selectedCommunity, setSelectedCommunityId } = useCommunityStore();
   const { items: cartItems, removeFromCart, updateQuantity, updateTier, clearCart, cartCount } = useCart();
   const { items: wishlistItems } = useWishlist();
   const { initPaymentSheet, presentPaymentSheet } = useStripeContext();
@@ -152,7 +152,7 @@ export default function MarketplaceScreen() {
   const [viewedProducts, setViewedProducts] = useState<{ id: string; title: string }[]>([]);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [topRatedCreatorIds, setTopRatedCreatorIds] = useState<string[]>([]);
-  const { profile } = useProfile();
+  const { data: profile } = useMyProfileQuery(user?.id);
 
   const fetchMarketplaceProducts = useCallback(async (append = false) => {
     if (!supabase) {

@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCommunity } from "../../context/CommunityContext";
-import { useMessaging } from "../../context/MessagingContext";
+import { useCommunityStore } from "../../store/community-store";
+import { useMessagingStore } from "../../store/messaging-store";
 import { useMessagingLayout as useLayout } from "../../hooks/useMessagingLayout";
 import type { ReactNode } from "react";
 
@@ -14,8 +14,8 @@ type MessagingLayoutProps = {
 
 export function MessagingLayout({ leftPanel, centerPanel, rightPanel }: MessagingLayoutProps) {
   const insets = useSafeAreaInsets();
-  const { selectedCommunity, setSelectedCommunityId } = useCommunity();
-  const { crmCollapsed, crmOpen, closeCRM, view } = useMessaging();
+  const { selectedCommunity, setSelectedCommunityId } = useCommunityStore();
+  const { crmCollapsed, crmOpen, closeCRM, view } = useMessagingStore();
   const layout = useLayout(crmCollapsed);
 
   const banner = selectedCommunity ? (

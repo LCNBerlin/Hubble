@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
-import { useCommunity } from "../context/CommunityContext";
-import { useNotificationsContext } from "../context/NotificationsContext";
+import { useCommunityStore } from "../store/community-store";
+import { useUnreadCountQuery } from "../hooks/useNotificationsQuery";
 import { useMyCommunities } from "../hooks/useMyCommunities";
 import { Avatar } from "./ui/Avatar";
 
@@ -52,8 +52,8 @@ export function HudTopBar() {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { unreadCount } = useNotificationsContext();
-  const { selectedCommunityId, setSelectedCommunityId, setSelectedCommunity } = useCommunity();
+  const { data: unreadCount = 0 } = useUnreadCountQuery(user?.id);
+  const { selectedCommunityId, setSelectedCommunityId, setSelectedCommunity } = useCommunityStore();
   const { communities } = useMyCommunities(user?.id);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const topPadding = insets.top;

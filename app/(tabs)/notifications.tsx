@@ -2,6 +2,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIndicator,
   FlatList,
@@ -12,7 +13,6 @@ import {
 } from "react-native";
 import { Avatar, EmptyState } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
-import { useNotificationsContext } from "../../context/NotificationsContext";
 import { formatTimeAgo } from "../../lib/formatTimeAgo";
 import {
   getNotifications,
@@ -105,7 +105,10 @@ function NotificationRow({
 export default function NotificationsScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { refresh: refreshUnread } = useNotificationsContext();
+  const queryClient = useQueryClient();
+  const refreshUnread = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  }, [queryClient]);
   const [list, setList] = useState<NotificationWithActor[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
