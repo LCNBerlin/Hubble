@@ -22,7 +22,7 @@ export class FeedController {
     @Query("hours") hours = "24",
     @Query("limit") limit = "50"
   ) {
-    return this.feed.getTrendingPostIds(Number(hours), Number(limit));
+    return this.feed.getTrendingPosts(Number(hours), Number(limit));
   }
 
   @Get("trending/hashtags")

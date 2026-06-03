@@ -138,16 +138,19 @@ export class FeedService {
     return scored.sort((a: { post: unknown; score: number }, b: { post: unknown; score: number }) => b.score - a.score).slice(0, limit).map((x: { post: unknown; score: number }) => x.post);
   }
 
-  async getTrendingPostIds(hoursWindow = 24, maxCount = 50): Promise<string[]> {
-    const rows = await this.db.query(
-      `SELECT post_id, COUNT(*) * 1 + COUNT(DISTINCT c.id) * 2 AS score
+  async getTrendingPosts(hoursWindow = 24, maxCount = 50): Promise<unknown[]> {
+    return this.db.query(
+      `SELECT p.id, p.user_id, p.type, p.title, p.body, p.media_uri, p.created_at,
+              p.is_sponsored, p.place_name, p.poll_options,
+              pr.username, pr.display_name, pr.avatar_url
        FROM post_likes pl
-       LEFT JOIN post_comments c ON c.post_id = pl.post_id AND c.created_at > NOW() - INTERVAL '${hoursWindow} hours'
+       JOIN posts p ON p.id = pl.post_id
+       LEFT JOIN profiles pr ON pr.id = p.user_id
        WHERE pl.created_at > NOW() - INTERVAL '${hoursWindow} hours'
-       GROUP BY post_id ORDER BY score DESC LIMIT $1`,
+       GROUP BY p.id, pr.username, pr.display_name, pr.avatar_url
+       ORDER BY COUNT(pl.*) DESC LIMIT $1`,
       [maxCount]
     );
-    return rows.map((r: { post_id: string }) => r.post_id);
   }
 
   async getTrendingHashtags(daysWindow = 7, maxCount = 20): Promise<{ name: string; count: number }[]> {

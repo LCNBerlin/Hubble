@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -24,20 +23,15 @@ import { FeedUserCard } from "../../components/FeedUserCard";
 import { PostCard } from "../../components/PostCard";
 import { ReportProfileModal } from "../../components/ReportProfileModal";
 import { TipModal } from "../../components/TipModal";
-import { Avatar, EmptyState } from "../../components/ui";
+import { EmptyState } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
 import { useCommunityStore } from "../../store/community-store";
 import { useSavedDataQuery } from "../../hooks/useProfileQuery";
 import { useToggleSavePostMutation, useBlockMutation } from "../../hooks/useProfileMutations";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
-import {
-  getCurrentPositionAsync,
-  Accuracy as LocationAccuracy,
-  requestForegroundPermissionsAsync,
-} from "../../lib/location";
-import { rankPosts, postMatchesTopics, type RankingContext } from "../../lib/feed-ranking";
+import { postMatchesTopics } from "../../lib/feed-ranking";
 import { reportPostWatch } from "../../lib/postWatchTime";
-import supabase from "../../lib/supabase";
+import { apiGet, apiPost, apiDelete } from "../../lib/api";
 import type { PostRow, ProfileRow } from "../../lib/supabase-profiles";
 
 const FEED_SORT_STORAGE_KEY = "hubble_feed_sort";
@@ -55,10 +49,6 @@ const FEED_SORT_OPTIONS: { key: SortBy; label: string }[] = [
   { key: "oldest", label: "Oldest first" },
   { key: "random", label: "Random" },
 ];
-
-function getSortLabel(sortBy: SortBy): string {
-  return FEED_SORT_OPTIONS.find((o) => o.key === sortBy)?.label ?? "For you";
-}
 
 const SORT_BUTTON_LABELS: Record<SortBy, string> = {
   for_you: "For you",
@@ -82,6 +72,8 @@ function shuffleArray<T>(arr: T[]): T[] {
   return out;
 }
 
+type FlatFeedPost = PostRow & { place_name?: string | null; hashtags?: string[]; username?: string | null; display_name?: string | null; avatar_url?: string | null; reputation_score?: number | null; verified_tier?: string | null };
+
 type FeedPost = {
   post: PostRow & { place_name?: string | null; hashtags?: string[] };
   profile: ProfileRow | null;
@@ -89,150 +81,43 @@ type FeedPost = {
 
 type FeedItem = FeedPost & { isSponsored: boolean };
 
+function flatToFeedPost(row: FlatFeedPost): FeedPost {
+  return {
+    post: row,
+    profile: row.username || row.display_name ? ({
+      id: row.user_id,
+      display_name: row.display_name ?? null,
+      username: row.username ?? "",
+      avatar_url: row.avatar_url ?? null,
+      bio: null,
+      banner_url: null,
+      followers_count: 0,
+      following_count: 0,
+      created_at: "",
+      updated_at: "",
+      reputation_score: row.reputation_score ?? null,
+      verified_tier: row.verified_tier ?? null,
+    } as ProfileRow) : null,
+  };
+}
+
 async function fetchTrendingPosts(limit: number): Promise<FeedPost[]> {
-  if (!supabase) return [];
-  const { data: idsData, error: rpcError } = await supabase.rpc("get_trending_post_ids", {
-    hours_window: 48,
-    max_count: limit,
-  });
-  if (rpcError || !idsData?.length) return [];
-  const ids = (idsData as { post_id: string }[]).map((r) => r.post_id);
-  const { data, error } = await supabase
-    .from("posts")
-    .select("*, profiles!user_id(display_name, username, avatar_url)")
-    .in("id", ids);
-  if (error) return [];
-  const byId = new Map((data ?? []).map((row: Record<string, unknown>) => [row.id as string, row]));
-  return ids
-    .filter((id) => byId.has(id))
-    .map((id) => {
-      const row = byId.get(id) as Record<string, unknown>;
-      return {
-        post: {
-          id: row.id as string,
-          user_id: row.user_id as string,
-          type: row.type as string,
-          title: row.title as string | null,
-          body: row.body as string | null,
-          media_uri: row.media_uri as string | null,
-          created_at: row.created_at as string,
-          poll_options: Array.isArray(row.poll_options) ? (row.poll_options as string[]) : undefined,
-        },
-        profile: row.profiles as ProfileRow | null,
-      };
-    });
+  try {
+    const data = await apiGet<FlatFeedPost[]>(`/feed/trending/posts?hours=48&limit=${limit}`);
+    return (data ?? []).map(flatToFeedPost);
+  } catch { return []; }
 }
 
 async function fetchTrendingHashtags(limit: number): Promise<{ name: string; post_count: number }[]> {
-  if (!supabase) return [];
-  const { data, error } = await supabase.rpc("get_trending_hashtags", {
-    days_window: 7,
-    max_count: limit,
-  });
-  if (error) return [];
-  return (data ?? []).map((r: { tag_name: string; post_count: number }) => ({
-    name: r.tag_name,
-    post_count: Number(r.post_count),
-  }));
+  try {
+    const data = await apiGet<{ name: string; count: number }[]>(`/feed/trending/hashtags?days=7&limit=${limit}`);
+    return (data ?? []).map((r) => ({ name: r.name, post_count: Number(r.count) }));
+  } catch { return []; }
 }
-
-async function fetchNearbyPosts(
-  userLat: number,
-  userLng: number,
-  radiusKm: number,
-  limit: number
-): Promise<FeedPost[]> {
-  if (!supabase) return [];
-  const { data: idsData, error: rpcError } = await supabase.rpc("get_nearby_post_ids", {
-    user_lat: userLat,
-    user_lng: userLng,
-    radius_km: radiusKm,
-    max_count: limit,
-  });
-  if (rpcError || !idsData?.length) return [];
-  const ids = (idsData as { post_id: string }[]).map((r) => r.post_id);
-  const { data, error } = await supabase
-    .from("posts")
-    .select("*, profiles!user_id(display_name, username, avatar_url)")
-    .in("id", ids);
-  if (error) return [];
-  const byId = new Map((data ?? []).map((row: Record<string, unknown>) => [row.id as string, row]));
-  return ids
-    .filter((id) => byId.has(id))
-    .map((id) => {
-      const row = byId.get(id) as Record<string, unknown>;
-      return {
-        post: {
-          id: row.id as string,
-          user_id: row.user_id as string,
-          type: row.type as string,
-          title: row.title as string | null,
-          body: row.body as string | null,
-          media_uri: row.media_uri as string | null,
-          created_at: row.created_at as string,
-          poll_options: Array.isArray(row.poll_options) ? (row.poll_options as string[]) : undefined,
-        },
-        profile: row.profiles as ProfileRow | null,
-      };
-    });
-}
-
-async function fetchVideoPosts(limit: number): Promise<FeedPost[]> {
-  if (!supabase) return [];
-  const { data, error } = await supabase
-    .from("posts")
-    .select("*, profiles!user_id(display_name, username, avatar_url)")
-    .eq("type", "video")
-    .not("media_uri", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) return [];
-  return (data ?? []).map((row: Record<string, unknown>) => ({
-    post: {
-      id: row.id as string,
-      user_id: row.user_id as string,
-      type: row.type as string,
-      title: row.title as string | null,
-      body: row.body as string | null,
-      media_uri: row.media_uri as string | null,
-      created_at: row.created_at as string,
-      poll_options: Array.isArray(row.poll_options) ? (row.poll_options as string[]) : undefined,
-    },
-    profile: row.profiles as ProfileRow | null,
-  }));
-}
-
-async function fetchSponsoredPosts(limit: number): Promise<FeedPost[]> {
-  if (!supabase) return [];
-  const { data, error } = await supabase
-    .from("posts")
-    .select("*, profiles!user_id(display_name, username, avatar_url)")
-    .eq("is_sponsored", true)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) return [];
-  return (data ?? []).map((row: Record<string, unknown>) => ({
-    post: {
-      id: row.id as string,
-      user_id: row.user_id as string,
-      type: row.type as string,
-      title: row.title as string | null,
-      body: row.body as string | null,
-      media_uri: row.media_uri as string | null,
-      created_at: row.created_at as string,
-      is_sponsored: true,
-      poll_options: Array.isArray(row.poll_options) ? (row.poll_options as string[]) : undefined,
-    },
-    profile: row.profiles as ProfileRow | null,
-  }));
-}
-
 
 const TRENDING_STRIP_ITEM_WIDTH = 120;
 const TRENDING_STRIP_ITEM_HEIGHT = 100;
 const TRENDING_STRIP_GAP = 8;
-const TRENDING_STRIP_HEADER_HEIGHT = 14 + 8 + TRENDING_STRIP_ITEM_HEIGHT + 12; // title + margin + strip + margin
-const TRENDING_TAGS_STRIP_HEIGHT = 14 + 8 + 32 + 12; // title + margin + chip row + margin
 
 function TrendingTagsStrip({
   tags,
@@ -271,74 +156,6 @@ function TrendingTagsStrip({
   );
 }
 
-function NearYouStrip({
-  posts,
-  onPressPost,
-}: {
-  posts: FeedPost[];
-  onPressPost: (postId: string) => void;
-}) {
-  if (posts.length === 0) return null;
-  return (
-    <View style={{ marginBottom: 12 }}>
-      <Text style={{ color: "#a78bfa", fontSize: 14, fontWeight: "600", marginBottom: 8, paddingHorizontal: 4 }}>
-        Near you
-      </Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: TRENDING_STRIP_GAP, paddingRight: 16 }}
-      >
-        {posts.map(({ post, profile }) => {
-          const title = post.title?.trim() || post.body?.trim() || "Post";
-          const firstLine = title.split(/\n/)[0].slice(0, 40) + (title.length > 40 ? "…" : "");
-          return (
-            <Pressable
-              key={post.id}
-              onPress={() => onPressPost(post.id)}
-              style={{
-                width: TRENDING_STRIP_ITEM_WIDTH,
-                height: TRENDING_STRIP_ITEM_HEIGHT,
-                borderRadius: 10,
-                overflow: "hidden",
-                backgroundColor: "#27272a",
-              }}
-            >
-              {post.media_uri ? (
-                <Image
-                  source={{ uri: post.media_uri }}
-                  style={{ width: "100%", height: "100%" }}
-                  contentFit="cover"
-                />
-              ) : (
-                <View style={{ flex: 1, backgroundColor: "#3f3f46", justifyContent: "center", alignItems: "center" }}>
-                  <Text style={{ color: "#71717a", fontSize: 11 }} numberOfLines={2}>
-                    {firstLine}
-                  </Text>
-                </View>
-              )}
-              <View
-                style={{
-                  position: "absolute",
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  padding: 6,
-                  backgroundColor: "rgba(0,0,0,0.6)",
-                }}
-              >
-                <Text style={{ color: "#fff", fontSize: 11 }} numberOfLines={1}>
-                  {firstLine}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    </View>
-  );
-}
-
 function TrendingStrip({
   posts,
   onPressPost,
@@ -357,7 +174,7 @@ function TrendingStrip({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: TRENDING_STRIP_GAP, paddingRight: 16 }}
       >
-        {posts.map(({ post, profile }) => {
+        {posts.map(({ post }) => {
           const title = post.title?.trim() || post.body?.trim() || "Post";
           const firstLine = title.split(/\n/)[0].slice(0, 40) + (title.length > 40 ? "…" : "");
           return (
@@ -436,7 +253,6 @@ function FeedItemWithSwipes({
 }: {
   item: FeedPost;
   isSponsored: boolean;
-  /** When true, this row is the one in view; video (if any) will autoplay. */
   isFocused?: boolean;
   cardWidth: number;
   itemHeight: number;
@@ -608,7 +424,6 @@ export default function FeedScreen() {
   const gapHeight = viewHeight * 0.3;
   const slotHeight = contentSlotHeight + gapHeight;
   const paddingVertical = 0;
-  const paddingHorizontal = 0;
   const { user } = useAuth();
   const { selectedCommunityId, selectedCommunity, setSelectedCommunityId } = useCommunityStore();
   const { data: savedData } = useSavedDataQuery(user?.id);
@@ -623,13 +438,7 @@ export default function FeedScreen() {
   const [items, setItems] = useState<FeedPost[]>([]);
   const [trendingPosts, setTrendingPosts] = useState<FeedPost[]>([]);
   const [trendingHashtags, setTrendingHashtags] = useState<{ name: string; post_count: number }[]>([]);
-  const [nearbyPosts, setNearbyPosts] = useState<FeedPost[]>([]);
-  const [sponsoredPosts, setSponsoredPosts] = useState<FeedPost[]>([]);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
-  const [purchasedCreatorIds, setPurchasedCreatorIds] = useState<Set<string>>(new Set());
-  const [engagementVelocityByPostId, setEngagementVelocityByPostId] = useState<Record<string, number>>({});
-  const [commentDepthByPostId, setCommentDepthByPostId] = useState<Record<string, { total: number; replyCount: number }>>({});
-  const [watchTimeByPostId, setWatchTimeByPostId] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const feedFocusStartRef = useRef<number>(Date.now());
   const feedPreviousIndexRef = useRef<number | null>(null);
@@ -723,49 +532,17 @@ export default function FeedScreen() {
   }, []);
 
   const fetchFeed = useCallback(async () => {
-    if (!supabase) return;
-    const limit =
-      sortBy === "for_you" || sortBy === "most_liked" || sortBy === "most_commented" || sortBy === "random"
-        ? 100
-        : 50;
-    const ascending = sortBy === "oldest";
-    let query = supabase
-      .from("posts")
-      .select("*, profiles!user_id(display_name, username, avatar_url, reputation_score, verified_tier), post_hashtags(hashtags(name))")
-      .order("created_at", { ascending })
-      .limit(limit);
-    if (selectedCommunityId) {
-      query = query.eq("user_id", selectedCommunityId);
-    }
-    const { data, error } = await query;
-    if (error) {
+    const limit = sortBy === "for_you" ? 50 : 100;
+    try {
+      const qs = new URLSearchParams({ limit: String(limit) });
+      if (selectedCommunityId) qs.set("creatorId", selectedCommunityId);
+      const data = await apiGet<FlatFeedPost[]>(`/feed?${qs.toString()}`);
+      let list: FeedPost[] = (data ?? []).map(flatToFeedPost);
+      if (sortBy === "random") list = shuffleArray(list).slice(0, 50);
+      setItems(list);
+    } catch {
       setItems([]);
-      return;
     }
-    let list: FeedPost[] = (data ?? []).map((row: Record<string, unknown>) => {
-      const phList = (row.post_hashtags as Array<{ hashtags: { name: string } | null }> | undefined) ?? [];
-      const hashtags = phList.map((ph) => ph.hashtags?.name).filter((n): n is string => !!n);
-      return {
-        post: {
-          id: row.id as string,
-          user_id: row.user_id as string,
-          type: row.type as string,
-          title: row.title as string | null,
-          body: row.body as string | null,
-          media_uri: row.media_uri as string | null,
-          created_at: row.created_at as string,
-          is_sponsored: (row.is_sponsored as boolean) ?? false,
-          place_name: (row.place_name as string | null) ?? null,
-          hashtags,
-          poll_options: Array.isArray(row.poll_options) ? (row.poll_options as string[]) : undefined,
-        },
-        profile: row.profiles as ProfileRow | null,
-      };
-    });
-    if (sortBy === "random") {
-      list = shuffleArray(list).slice(0, 50);
-    }
-    setItems(list);
   }, [sortBy, selectedCommunityId]);
 
   useEffect(() => {
@@ -786,63 +563,14 @@ export default function FeedScreen() {
   useEffect(() => {
     fetchTrendingPosts(10).then(setTrendingPosts);
     fetchTrendingHashtags(10).then(setTrendingHashtags);
-    fetchSponsoredPosts(5).then(setSponsoredPosts);
   }, []);
 
   useEffect(() => {
-    if (!user?.id || !supabase) return;
-    supabase
-      .from("follows")
-      .select("following_id")
-      .eq("follower_id", user.id)
-      .then(({ data }) => {
-        setFollowingIds(new Set((data ?? []).map((r: { following_id: string }) => r.following_id)));
-      });
+    if (!user?.id) return;
+    apiGet<string[]>("/profiles/me/following-ids")
+      .then((data) => setFollowingIds(new Set(data ?? [])))
+      .catch(() => {});
   }, [user?.id]);
-
-  useEffect(() => {
-    if (!user?.id || !supabase) return;
-    (async () => {
-      const { data: ordersData } = await supabase
-        .from("orders")
-        .select("id")
-        .eq("buyer_id", user.id);
-      if (!ordersData?.length) {
-        setPurchasedCreatorIds(new Set());
-        return;
-      }
-      const orderIds = ordersData.map((o: { id: string }) => o.id);
-      const { data: itemsData } = await supabase
-        .from("order_items")
-        .select("creator_id")
-        .in("order_id", orderIds);
-      const creatorIds = new Set(
-        (itemsData ?? [])
-          .map((r: { creator_id: string | null }) => r.creator_id)
-          .filter((id): id is string => id != null)
-      );
-      setPurchasedCreatorIds(creatorIds);
-    })();
-  }, [user?.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const perm = await requestForegroundPermissionsAsync();
-        if (!perm || perm.status !== "granted" || cancelled) return;
-        const loc = await getCurrentPositionAsync({ accuracy: LocationAccuracy.Balanced });
-        if (cancelled || !loc) return;
-        const list = await fetchNearbyPosts(loc.coords.latitude, loc.coords.longitude, 50, 10);
-        if (!cancelled) setNearbyPosts(list);
-      } catch {
-        // ignore (e.g. location unavailable or permission denied)
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -850,76 +578,17 @@ export default function FeedScreen() {
       fetchFeed(),
       fetchTrendingPosts(10).then(setTrendingPosts),
       fetchTrendingHashtags(10).then(setTrendingHashtags),
-      fetchSponsoredPosts(5).then(setSponsoredPosts),
     ]);
-    try {
-      const perm = await requestForegroundPermissionsAsync();
-      if (perm?.status === "granted") {
-        const loc = await getCurrentPositionAsync({ accuracy: LocationAccuracy.Balanced });
-        if (loc) fetchNearbyPosts(loc.coords.latitude, loc.coords.longitude, 50, 10).then(setNearbyPosts);
-      }
-    } catch {
-      // ignore
-    }
     setRefreshing(false);
   }, [fetchFeed]);
 
   const postIds = useMemo(() => items.map((i) => i.post.id), [items]);
 
-  useEffect(() => {
-    if (!supabase || postIds.length === 0 || sortBy !== "for_you") {
-      if (sortBy !== "for_you") {
-        setEngagementVelocityByPostId({});
-        setCommentDepthByPostId({});
-        setWatchTimeByPostId({});
-      }
-      return;
-    }
-    (async () => {
-      const [velRes, depthRes, watchRes] = await Promise.all([
-        supabase.rpc("get_post_engagement_velocity", { post_ids: postIds, hours_window: 24 }),
-        supabase.rpc("get_post_comment_depth", { post_ids: postIds }),
-        supabase.rpc("get_post_watch_aggregates", { post_ids: postIds, days_window: 7 }),
-      ]);
-      const velMap: Record<string, number> = {};
-      (velRes.data ?? []).forEach((r: { post_id: string; velocity_count: number }) => {
-        velMap[r.post_id] = Number(r.velocity_count) || 0;
-      });
-      setEngagementVelocityByPostId(velMap);
-      const depthMap: Record<string, { total: number; replyCount: number }> = {};
-      (depthRes.data ?? []).forEach(
-        (r: { post_id: string; total_comments: number; reply_count: number }) => {
-          depthMap[r.post_id] = {
-            total: Number(r.total_comments) || 0,
-            replyCount: Number(r.reply_count) || 0,
-          };
-        }
-      );
-      setCommentDepthByPostId(depthMap);
-      const watchMap: Record<string, number> = {};
-      (watchRes.data ?? []).forEach((r: { post_id: string; total_seconds: number }) => {
-        watchMap[r.post_id] = Number(r.total_seconds) || 0;
-      });
-      setWatchTimeByPostId(watchMap);
-    })();
-  }, [postIds.join(","), sortBy]);
-
   const [randomPostIds, setRandomPostIds] = useState<string[]>([]);
   const trendingPostIds = useMemo(() => trendingPosts.map((i) => i.post.id), [trendingPosts]);
-  const nearbyPostIds = useMemo(() => nearbyPosts.map((i) => i.post.id), [nearbyPosts]);
-  const nearbyPostIdsSet = useMemo(() => new Set(nearbyPostIds), [nearbyPostIds]);
-  const sponsoredPostIds = useMemo(() => sponsoredPosts.map((i) => i.post.id), [sponsoredPosts]);
   const allPostIds = useMemo(
-    () => [
-      ...new Set([
-        ...postIds,
-        ...randomPostIds,
-        ...trendingPostIds,
-        ...nearbyPostIds,
-        ...sponsoredPostIds,
-      ]),
-    ],
-    [postIds, randomPostIds, trendingPostIds, nearbyPostIds, sponsoredPostIds]
+    () => [...new Set([...postIds, ...randomPostIds, ...trendingPostIds])],
+    [postIds, randomPostIds, trendingPostIds]
   );
   const { getEngagement, toggleLike, toggleDislike, toggleRepost, refresh: refreshEngagement } = usePostEngagement(allPostIds);
 
@@ -934,22 +603,7 @@ export default function FeedScreen() {
 
   const sortedItems = useMemo(() => {
     const list = [...itemsFilteredByType];
-    if (sortBy === "for_you") {
-      const ctx: RankingContext = {
-        followedIds: followingIds,
-        purchasedCreatorIds,
-        nearbyPostIds: nearbyPostIdsSet,
-        seeMoreTopics: algorithmSeeMore,
-        seeLessTopics: algorithmSeeLess,
-        engagementVelocityByPostId,
-        commentDepthByPostId,
-        watchTimeByPostId,
-        getLikeCount: (id) => getEngagement(id).likeCount,
-        getCommentCount: (id) => getEngagement(id).commentCount,
-        viewerUserId: user?.id,
-      };
-      return rankPosts(list, ctx);
-    }
+    if (sortBy === "for_you") return list;
     if (sortBy === "random") {
       const reposted: FeedPost[] = [];
       const rest: FeedPost[] = [];
@@ -979,20 +633,7 @@ export default function FeedScreen() {
       if (sortBy === "oldest") return aTime - bTime;
       return bTime - aTime;
     });
-  }, [
-    itemsFilteredByType,
-    getEngagement,
-    sortBy,
-    followingIds,
-    nearbyPostIdsSet,
-    purchasedCreatorIds,
-    engagementVelocityByPostId,
-    commentDepthByPostId,
-    watchTimeByPostId,
-    algorithmSeeMore,
-    algorithmSeeLess,
-    user?.id,
-  ]);
+  }, [itemsFilteredByType, getEngagement, sortBy]);
 
   const feedItems = useMemo(() => {
     const list = sortedItems;
@@ -1018,25 +659,9 @@ export default function FeedScreen() {
     [feedItems, hiddenPostIds, blockedUserIds]
   );
 
-  const mergedFeedItems = useMemo((): FeedItem[] => {
-    const feedIds = new Set(filteredFeedItems.map((i) => i.post.id));
-    const sponsoredOnly = sponsoredPosts.filter(
-      (s) => !feedIds.has(s.post.id) && !hiddenPostIds.has(s.post.id) && !blockedUserIds.includes(s.post.user_id)
-    );
-    const list: FeedItem[] = [];
-    let sIdx = 0;
-    for (let i = 0; i < filteredFeedItems.length; i++) {
-      const insertSponsored =
-        sIdx < sponsoredOnly.length &&
-        ((i + 1) === 5 || (i + 1) === 9 || ((i + 1) > 10 && (i + 1 - 10) % 8 === 0));
-      if (insertSponsored && sponsoredOnly[sIdx]) {
-        list.push({ ...sponsoredOnly[sIdx], isSponsored: true });
-        sIdx++;
-      }
-      list.push({ ...filteredFeedItems[i], isSponsored: filteredFeedItems[i].post.is_sponsored ?? false });
-    }
-    return list;
-  }, [filteredFeedItems, sponsoredPosts, hiddenPostIds, blockedUserIds]);
+  const mergedFeedItems = useMemo((): FeedItem[] =>
+    filteredFeedItems.map((item) => ({ ...item, isSponsored: item.post.is_sponsored ?? false })),
+    [filteredFeedItems]);
 
   useEffect(() => {
     mergedFeedItemsRef.current = mergedFeedItems;
@@ -1068,16 +693,10 @@ export default function FeedScreen() {
     [mergedFeedItems, listHeaderHeight, paddingVertical, slotHeight]
   );
 
-  const handleSearchSubmit = useCallback(async () => {
+  const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim().replace(/^#+/, "").toLowerCase();
-    if (!q || !supabase) return;
-    const { data } = await supabase
-      .from("hashtags")
-      .select("name")
-      .ilike("name", `%${q}%`)
-      .limit(5);
-    const first = (data ?? [])[0] as { name: string } | undefined;
-    if (first) router.push({ pathname: "/tag/[name]", params: { name: first.name } });
+    if (!q) return;
+    router.push({ pathname: "/tag/[name]", params: { name: q } });
   }, [searchQuery, router]);
 
   const handleShare = useCallback((_postId: string, title: string | null) => {
@@ -1086,17 +705,13 @@ export default function FeedScreen() {
 
   const handleFollow = useCallback(
     async (userId: string) => {
-      if (!user?.id || !supabase || userId === user.id) return;
+      if (!user?.id || userId === user.id) return;
       const following = followingIds.has(userId);
       if (following) {
-        await supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", userId);
-        setFollowingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(userId);
-          return next;
-        });
+        await apiDelete(`/profiles/${userId}/follow`).catch(() => {});
+        setFollowingIds((prev) => { const next = new Set(prev); next.delete(userId); return next; });
       } else {
-        await supabase.from("follows").insert({ follower_id: user.id, following_id: userId });
+        await apiPost(`/profiles/${userId}/follow`).catch(() => {});
         setFollowingIds((prev) => new Set([...prev, userId]));
       }
     },
@@ -1123,12 +738,9 @@ export default function FeedScreen() {
 
   const handleDeletePost = useCallback(
     async (postId: string) => {
-      if (!supabase) return;
-      await supabase.from("posts").delete().eq("id", postId);
+      await apiDelete(`/posts/${postId}`).catch(() => {});
       setItems((prev) => prev.filter((i) => i.post.id !== postId));
       setTrendingPosts((prev) => prev.filter((i) => i.post.id !== postId));
-      setNearbyPosts((prev) => prev.filter((i) => i.post.id !== postId));
-      setSponsoredPosts((prev) => prev.filter((i) => i.post.id !== postId));
     },
     []
   );
@@ -1289,26 +901,26 @@ export default function FeedScreen() {
               isFocused={isScreenFocused && index === focusedFeedIndex}
               cardWidth={cardWidth}
               itemHeight={itemHeight}
-            getLikeState={getEngagement}
-            getDislikeState={getEngagement}
-            getRepostState={getEngagement}
-            getCommentCount={(id) => getEngagement(id).commentCount}
-            savedPostIds={savedPostIds}
-            handlePressCreator={handlePressCreator}
-            handleLike={handleLike}
-            handleDislike={handleDislike}
-            handleShare={handleShare}
-            handleRequestTip={handleRequestTip}
-            toggleRepost={toggleRepost}
-            toggleSavePost={toggleSavePost}
-            refreshCommentCounts={refreshEngagement}
-            onRandomPostsLoaded={handleRandomPostsLoaded}
-            onReportUser={handleReportUser}
-            onBlockUser={handleBlockUser}
-            onHidePost={handleHidePost}
-            onDeletePost={handleDeletePost}
-            onFollow={handleFollow}
-            isFollowing={(userId) => followingIds.has(userId)}
+              getLikeState={getEngagement}
+              getDislikeState={getEngagement}
+              getRepostState={getEngagement}
+              getCommentCount={(id) => getEngagement(id).commentCount}
+              savedPostIds={savedPostIds}
+              handlePressCreator={handlePressCreator}
+              handleLike={handleLike}
+              handleDislike={handleDislike}
+              handleShare={handleShare}
+              handleRequestTip={handleRequestTip}
+              toggleRepost={toggleRepost}
+              toggleSavePost={toggleSavePost}
+              refreshCommentCounts={refreshEngagement}
+              onRandomPostsLoaded={handleRandomPostsLoaded}
+              onReportUser={handleReportUser}
+              onBlockUser={handleBlockUser}
+              onHidePost={handleHidePost}
+              onDeletePost={handleDeletePost}
+              onFollow={handleFollow}
+              isFollowing={(userId) => followingIds.has(userId)}
             />
           </View>
         )}
