@@ -10,19 +10,19 @@ export class ProfilesService {
     private dataSource: DataSource
   ) {}
 
-  async findById(id: string): Promise<Profile> {
-    const p = await this.profiles.findOne({ where: { id } });
-    if (!p) throw new NotFoundException("Profile not found");
-    return p;
+  async findById(id: string): Promise<unknown> {
+    const rows = await this.dataSource.query(`SELECT * FROM profiles WHERE id = $1`, [id]);
+    if (!rows[0]) throw new NotFoundException("Profile not found");
+    return rows[0];
   }
 
-  async findByUsername(username: string): Promise<Profile> {
-    const p = await this.profiles.findOne({ where: { username } });
-    if (!p) throw new NotFoundException("Profile not found");
-    return p;
+  async findByUsername(username: string): Promise<unknown> {
+    const rows = await this.dataSource.query(`SELECT * FROM profiles WHERE username = $1`, [username]);
+    if (!rows[0]) throw new NotFoundException("Profile not found");
+    return rows[0];
   }
 
-  async update(id: string, data: Partial<Profile>): Promise<Profile> {
+  async update(id: string, data: Partial<Profile>): Promise<unknown> {
     await this.profiles.update(id, { ...data, updatedAt: new Date() });
     return this.findById(id);
   }

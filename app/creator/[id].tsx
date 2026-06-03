@@ -24,8 +24,8 @@ import { useFollowMutation, useUnfollowMutation } from "../../hooks/useProfileMu
 import { useUpdateProductMutation } from "../../hooks/useProductsQuery";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
 import { CREATOR_AVATAR } from "../../lib/constants";
-import supabase from "../../lib/supabase";
 import { rowToProduct } from "../../lib/supabase-products";
+import { apiGet } from "../../lib/api";
 import type { PostRow, ProfileRow } from "../../lib/supabase-profiles";
 
 const POST_GRID_COLUMNS = 4;
@@ -406,27 +406,23 @@ export default function CreatorProfileScreen() {
   const updateProductMutation = useUpdateProductMutation();
 
   const fetchProfileAndPosts = useCallback(async () => {
-    if (!supabase || !id) return;
-    const [profileRes, postsRes] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", id).single(),
-      supabase.from("posts").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(50),
+    if (!id) return;
+    const [profileData, postsData] = await Promise.all([
+      apiGet<ProfileRow>(`/profiles/${id}`).catch(() => null),
+      apiGet<PostRow[]>(`/posts/by-user/${id}`).catch(() => []),
     ]);
-    if (profileRes.data) setProfile(profileRes.data as ProfileRow);
-    else setProfile(null);
-    if (postsRes.data) setPosts((postsRes.data as PostRow[]) ?? []);
-    else setPosts([]);
+    setProfile(profileData);
+    setPosts(postsData ?? []);
   }, [id]);
 
   const fetchCreatorProducts = useCallback(async () => {
-    if (!supabase || !id) return;
-    const { data } = await supabase
-      .from("products")
-      .select("*")
-      .eq("creator_id", id)
-      .order("created_at", { ascending: false });
-    if (data) {
-      setCreatorProducts(data.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-    } else setCreatorProducts([]);
+    if (!id) return;
+    try {
+      const data = await apiGet<Record<string, unknown>[]>(`/products/by-creator/${id}`);
+      setCreatorProducts(data.map((row) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
+    } catch {
+      setCreatorProducts([]);
+    }
   }, [id]);
 
   const load = useCallback(async () => {
