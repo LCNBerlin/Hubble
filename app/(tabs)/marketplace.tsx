@@ -21,11 +21,11 @@ import { ProductCard } from "../../components/ProductCard";
 import type { CreatorInfo } from "../../components/ProductCard";
 import { EmptyState } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
-import { useCart } from "../../context/CartContext";
 import { useCommunityStore } from "../../store/community-store";
-import { useContent } from "../../context/ContentContext";
 import { useMyProfileQuery } from "../../hooks/useProfileQuery";
-import type { Product, ProductType } from "../../context/ContentContext";
+import type { Product, ProductType } from "../../lib/product-types";
+import { useCartQuery, useCartCount, useRemoveFromCartMutation, useUpdateCartQuantityMutation, useUpdateCartTierMutation, useClearCartMutation } from "../../hooks/useCartQuery";
+import { useWishlistQuery } from "../../hooks/useWishlistQuery";
 import { rankProducts } from "../../lib/discovery";
 import {
   getCurrentPositionAsync,
@@ -37,7 +37,6 @@ import supabase from "../../lib/supabase";
 import { rowToProduct } from "../../lib/supabase-products";
 import { getViewedProducts } from "../../lib/viewed-products";
 import { useStripeContext } from "../../context/StripeContext";
-import { useWishlist } from "../../context/WishlistContext";
 import { PAYMENTS_ENABLED } from "../../lib/config";
 import { confirmOrder, createPaymentIntent, formatCentsToPrice, getProductPriceCents, parsePriceToCents, trackAbandonedCart, validateCoupon } from "../../lib/payments";
 
@@ -97,7 +96,6 @@ export default function MarketplaceScreen() {
   const gridCellWidth = (screenWidth - GRID_PADDING * 2 - GRID_GAP * (numColumns - 1)) / numColumns;
   const cardWidth = gridCellWidth;
 
-  const { productReviews, getReviewsForProduct } = useContent();
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
@@ -106,8 +104,13 @@ export default function MarketplaceScreen() {
   const [creatorMap, setCreatorMap] = useState<Record<string, CreatorInfo>>({});
   const { user } = useAuth();
   const { selectedCommunityId, selectedCommunity, setSelectedCommunityId } = useCommunityStore();
-  const { items: cartItems, removeFromCart, updateQuantity, updateTier, clearCart, cartCount } = useCart();
-  const { items: wishlistItems } = useWishlist();
+  const { data: cartItems = [] } = useCartQuery();
+  const cartCount = useCartCount();
+  const removeFromCartMutation = useRemoveFromCartMutation();
+  const updateQuantityMutation = useUpdateCartQuantityMutation();
+  const updateTierMutation = useUpdateCartTierMutation();
+  const clearCartMutation = useClearCartMutation();
+  const { data: wishlistItems = [] } = useWishlistQuery();
   const { initPaymentSheet, presentPaymentSheet } = useStripeContext();
   const [refreshing, setRefreshing] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -521,16 +524,7 @@ export default function MarketplaceScreen() {
     creatorIdsForFilterFetch.join(","),
   ]);
 
-  const ratingMap = useMemo(() => {
-    const map: Record<string, { avg: number; count: number }> = {};
-    products.forEach((p) => {
-      const reviews = getReviewsForProduct(p.id);
-      if (reviews.length === 0) return;
-      const sum = reviews.reduce((s, r) => s + r.rating, 0);
-      map[p.id] = { avg: sum / reviews.length, count: reviews.length };
-    });
-    return map;
-  }, [products, productReviews, getReviewsForProduct]);
+  const ratingMap = useMemo(() => ({} as Record<string, { avg: number; count: number }>), []);
 
   useEffect(() => {
     setDisplayedCount(DISCOVERY_PAGE_SIZE);
@@ -916,8 +910,8 @@ export default function MarketplaceScreen() {
   }, [fetchMarketplaceProducts]);
 
   const handleRemoveFromCart = useCallback((productId: string) => {
-    removeFromCart(productId);
-  }, [removeFromCart]);
+    removeFromCartMutation.mutate(productId);
+  }, [removeFromCartMutation]);
 
   const handleClearCart = useCallback(() => {
     Alert.alert(
@@ -925,10 +919,10 @@ export default function MarketplaceScreen() {
       "Remove all items from your cart.",
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Clear", style: "destructive", onPress: clearCart },
+        { text: "Clear", style: "destructive", onPress: () => clearCartMutation.mutate() },
       ]
     );
-  }, [clearCart]);
+  }, [clearCartMutation]);
 
   const handleApplyPromo = useCallback(async () => {
     const code = promoInput.trim();
@@ -998,7 +992,7 @@ export default function MarketplaceScreen() {
           couponCode: appliedCoupon?.code ?? null,
         });
         if (confirmResult.ok) {
-          clearCart();
+          clearCartMutation.mutate();
           setAppliedCoupon(null);
           setView("shop");
           Alert.alert("Success", `Order complete. Order #${confirmResult.orderId.slice(0, 8)}.`);
@@ -1011,7 +1005,7 @@ export default function MarketplaceScreen() {
     } finally {
       setCheckoutLoading(false);
     }
-  }, [subtotalCents, totalCents, canCheckout, appliedCoupon, user?.id, initPaymentSheet, presentPaymentSheet, clearCart, cartItems, lineTotals]);
+  }, [subtotalCents, totalCents, canCheckout, appliedCoupon, user?.id, initPaymentSheet, presentPaymentSheet, clearCartMutation, cartItems, lineTotals]);
 
   const title = view === "wishlist" ? "Wishlist" : "Cart";
   const subtitle =
@@ -2026,7 +2020,7 @@ export default function MarketplaceScreen() {
                             </Text>
                             <View className="flex-row items-center gap-1">
                               <TouchableOpacity
-                                onPress={() => updateQuantity(product.id, quantity - 1)}
+                                onPress={() => updateQuantityMutation.mutate({ productId: product.id, quantity: quantity - 1 })}
                                 className="h-8 w-8 items-center justify-center rounded bg-zinc-700"
                                 accessibilityLabel="Decrease quantity"
                               >
@@ -2036,7 +2030,7 @@ export default function MarketplaceScreen() {
                                 {quantity}
                               </Text>
                               <TouchableOpacity
-                                onPress={() => updateQuantity(product.id, quantity + 1)}
+                                onPress={() => updateQuantityMutation.mutate({ productId: product.id, quantity: quantity + 1 })}
                                 className="h-8 w-8 items-center justify-center rounded bg-zinc-700"
                                 accessibilityLabel="Increase quantity"
                               >
@@ -2061,7 +2055,7 @@ export default function MarketplaceScreen() {
                             return (
                               <TouchableOpacity
                                 key={i}
-                                onPress={() => updateTier(product.id, i)}
+                                onPress={() => updateTierMutation.mutate({ productId: product.id, selectedTierIndex: i })}
                                 className={`rounded-lg border px-3 py-1.5 ${isSelected ? "border-violet-500 bg-violet-600/20" : "border-zinc-600 bg-zinc-700/80"}`}
                               >
                                 <Text className={`text-xs ${isSelected ? "text-violet-300 font-medium" : "text-zinc-400"}`}>

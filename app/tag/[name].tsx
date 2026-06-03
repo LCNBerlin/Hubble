@@ -23,7 +23,8 @@ import { useAuth } from "../../context/AuthContext";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
 import supabase from "../../lib/supabase";
 import type { ProfileRow, PostRow } from "../../lib/supabase-profiles";
-import { useProfile } from "../../context/ProfileContext";
+import { useSavedDataQuery } from "../../hooks/useProfileQuery";
+import { useToggleSavePostMutation } from "../../hooks/useProfileMutations";
 
 const GRID_PADDING = 16;
 const GRID_GAP = 8;
@@ -205,7 +206,10 @@ export default function TagFeedScreen() {
   const { name } = useLocalSearchParams<{ name: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const { savedPostIds, toggleSavePost } = useProfile();
+  const { data: savedData } = useSavedDataQuery(user?.id);
+  const savedPostIds = savedData?.postIds ?? [];
+  const toggleSavePostMutation = useToggleSavePostMutation();
+  const toggleSavePost = (postId: string) => toggleSavePostMutation.mutate(postId);
   const tagName = (name ?? "").trim().toLowerCase();
   const [items, setItems] = useState<TagPostItem[]>([]);
   const [loading, setLoading] = useState(true);

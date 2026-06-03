@@ -18,9 +18,10 @@ import {
 import { PostCard } from "../../components/PostCard";
 import { ProductCard } from "../../components/ProductCard";
 import { useAuth } from "../../context/AuthContext";
-import type { Post as PostType, Product } from "../../context/ContentContext";
-import { useContent } from "../../context/ContentContext";
-import { useProfile } from "../../context/ProfileContext";
+import type { Post as PostType, Product } from "../../lib/product-types";
+import { useFollowStatusQuery } from "../../hooks/useProfileQuery";
+import { useFollowMutation, useUnfollowMutation } from "../../hooks/useProfileMutations";
+import { useUpdateProductMutation } from "../../hooks/useProductsQuery";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
 import { CREATOR_AVATAR } from "../../lib/constants";
 import supabase from "../../lib/supabase";
@@ -377,7 +378,10 @@ export default function CreatorProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { height: windowHeight } = useWindowDimensions();
-  const { isFollowing, follow, unfollow, setViewedUser } = useProfile();
+  const { data: followStatus } = useFollowStatusQuery(user?.id, id);
+  const isFollowing = followStatus?.isFollowing ?? false;
+  const followMutation = useFollowMutation();
+  const unfollowMutation = useUnfollowMutation();
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [posts, setPosts] = useState<PostRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -399,12 +403,7 @@ export default function CreatorProfileScreen() {
     []
   );
 
-  const { updateProduct } = useContent();
-
-  useEffect(() => {
-    if (id && user?.id && id !== user.id) setViewedUser(id);
-    return () => setViewedUser(null);
-  }, [id, user?.id, setViewedUser]);
+  const updateProductMutation = useUpdateProductMutation();
 
   const fetchProfileAndPosts = useCallback(async () => {
     if (!supabase || !id) return;
@@ -442,14 +441,14 @@ export default function CreatorProfileScreen() {
     if (!user || !id || followLoading) return;
     setFollowLoading(true);
     if (isFollowing) {
-      await unfollow();
+      await unfollowMutation.mutateAsync(id);
       if (profile) setProfile({ ...profile, followers_count: Math.max(0, profile.followers_count - 1) });
     } else {
-      await follow();
+      await followMutation.mutateAsync(id);
       if (profile) setProfile({ ...profile, followers_count: profile.followers_count + 1 });
     }
     setFollowLoading(false);
-  }, [user?.id, id, isFollowing, follow, unfollow, profile, followLoading]);
+  }, [user?.id, id, isFollowing, followMutation, unfollowMutation, profile, followLoading]);
 
   const postIds = posts.map((p) => p.id);
   const { getEngagement, toggleLike } = usePostEngagement(postIds);
@@ -766,7 +765,7 @@ export default function CreatorProfileScreen() {
           <CreatorProductsSection
             products={creatorProducts}
             updateProduct={(productId, updates) => {
-              updateProduct(productId, updates);
+              updateProductMutation.mutate({ id: productId, updates });
               setCreatorProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, ...updates } : p)));
             }}
             onSeeAllCategory={setSeeAllProductCategory}

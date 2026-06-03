@@ -21,14 +21,14 @@ import {
 } from "react-native";
 import { SchedulePicker } from "../../components/SchedulePicker";
 import { useAuth } from "../../context/AuthContext";
-import { useProfile } from "../../context/ProfileContext";
+import { useMyProfileQuery } from "../../hooks/useProfileQuery";
+import { useSaveTagsMutation } from "../../hooks/useProfileMutations";
 import type {
     PostType,
     PriceTier,
     ProductType,
     ServiceSlot,
-} from "../../context/ContentContext";
-import { useContent } from "../../context/ContentContext";
+} from "../../lib/product-types";
 import { getHashtagsFromPostContent, syncPostHashtags } from "../../lib/hashtags";
 import {
   Accuracy as LocationAccuracy,
@@ -368,8 +368,10 @@ function CreatePostModal({
     }
   );
 
-  const { profile, saveTagsToProfile } = useProfile();
-  const savedHashtags = profile.categoryTags ?? [];
+  const { user: authUser } = useAuth();
+  const { data: myProfile } = useMyProfileQuery(authUser?.id);
+  const saveTagsMutation = useSaveTagsMutation();
+  const savedHashtags = myProfile?.category_tags ?? [];
 
   const normalizeTag = (raw: string) => raw.replace(/^#/, "").replace(/[^a-zA-Z0-9_]/g, "").toLowerCase().trim();
   const addHashtag = (raw: string) => {
@@ -793,7 +795,7 @@ function CreatePostModal({
                   </>
                 )}
                 <TouchableOpacity
-                  onPress={() => hashtags.length > 0 && saveTagsToProfile(hashtags)}
+                  onPress={() => hashtags.length > 0 && saveTagsMutation.mutate(hashtags)}
                   disabled={hashtags.length === 0}
                   className="rounded-full border border-violet-500/50 px-3 py-1.5"
                 >
@@ -938,8 +940,10 @@ function CreateProductModal({
     return d;
   });
 
-  const { profile, saveTagsToProfile } = useProfile();
-  const savedTags = profile.categoryTags ?? [];
+  const { user: authUserProd } = useAuth();
+  const { data: myProfileProd } = useMyProfileQuery(authUserProd?.id);
+  const saveTagsMutationProd = useSaveTagsMutation();
+  const savedTags = myProfileProd?.category_tags ?? [];
 
   const isDigital = type === "digital";
   const isPhysical = type === "physical";
@@ -1463,7 +1467,7 @@ function CreateProductModal({
                   </>
                 )}
                 <TouchableOpacity
-                  onPress={() => tags.length > 0 && saveTagsToProfile(tags)}
+                  onPress={() => tags.length > 0 && saveTagsMutationProd.mutate(tags)}
                   disabled={tags.length === 0}
                   className="rounded-full border border-violet-500/50 px-3 py-1.5"
                 >
@@ -1808,7 +1812,6 @@ const PRODUCT_TYPE_LABELS: Record<ProductType, string> = {
 
 export default function CreateScreen() {
   const navigation = useNavigation();
-  const { addPost, addProduct, addProductFromServer, addEvent } = useContent();
   const { user } = useAuth();
   const router = useRouter();
   const [categoryModal, setCategoryModal] = useState<CategoryModalType>(null);
@@ -1843,7 +1846,6 @@ export default function CreateScreen() {
         date: data.date,
       });
     }
-    addEvent({ title: data.title, description: data.description || undefined, date: data.date });
     setCategoryModal(null);
     Alert.alert("Event created", "View it on your profile.", [
       { text: "OK", onPress: () => router.replace("/(tabs)/profile") },
@@ -1893,14 +1895,6 @@ export default function CreateScreen() {
         // non-blocking; post still created without thumbnail
       }
     }
-    addPost({
-      type: createPostType,
-      title: title ?? "",
-      body,
-      mediaUri: finalMediaUri ?? undefined,
-      thumbnailUri: thumbnailUrl ?? undefined,
-      pollOptions: pollOpts,
-    });
     setCreatePostType(null);
     if (user && supabase) {
       const insertPayload: Record<string, unknown> = {
@@ -1990,7 +1984,6 @@ export default function CreateScreen() {
     }
     if (inserted) {
       const productId = (inserted as { id: string }).id;
-      addProductFromServer(rowToProduct(inserted as Parameters<typeof rowToProduct>[0]));
       if (data.revenueSplits?.length && user?.id) {
         for (const s of data.revenueSplits) {
           const partnerId = await getProfileIdByUsername(s.partnerUsername);

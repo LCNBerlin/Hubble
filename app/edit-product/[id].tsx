@@ -16,9 +16,10 @@ import {
   View,
 } from "react-native";
 import { useAuth } from "../../context/AuthContext";
-import type { PriceTier, ProductType, ServiceSlot } from "../../context/ContentContext";
-import { useContent } from "../../context/ContentContext";
-import { useProfile } from "../../context/ProfileContext";
+import type { PriceTier, ProductType, ServiceSlot } from "../../lib/product-types";
+import { useUpdateProductMutation, useDeleteProductMutation } from "../../hooks/useProductsQuery";
+import { useMyProfileQuery } from "../../hooks/useProfileQuery";
+import { useSaveTagsMutation } from "../../hooks/useProfileMutations";
 import { createRevenueSplit, getProfileIdByUsername, getRevenueSplitsForOwner } from "../../lib/revenue-splits";
 import { productToRow, rowToProduct } from "../../lib/supabase-products";
 import supabase from "../../lib/supabase";
@@ -52,7 +53,8 @@ export default function EditProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const { updateProduct, deleteProduct } = useContent();
+  const updateProductMutation = useUpdateProductMutation();
+  const deleteProductMutation = useDeleteProductMutation();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [product, setProduct] = useState<{
@@ -142,8 +144,9 @@ export default function EditProductScreen() {
     fetchProduct();
   }, [fetchProduct]);
 
-  const { profile, saveTagsToProfile } = useProfile();
-  const savedTags = profile.categoryTags ?? [];
+  const { data: myProfile } = useMyProfileQuery(user?.id);
+  const saveTagsMutation = useSaveTagsMutation();
+  const savedTags = myProfile?.category_tags ?? [];
 
   const addTag = (raw: string) => {
     const t = raw.replace(/^#/, "").replace(/[^a-zA-Z0-9_-]/g, " ").trim().toLowerCase();
@@ -221,7 +224,7 @@ export default function EditProductScreen() {
       price: price.trim() || undefined,
       mediaUri: mediaUri ?? undefined,
       coverUri: isDigital ? (coverImageUri ?? undefined) : undefined,
-      mediaMimeType: mediaMimeType ?? product.mediaMimeType ?? undefined,
+      mediaMimeType: mediaMimeType ?? undefined,
       interval: product.type === "membership" && interval ? interval : undefined,
       priceTiers: priceTiers.length > 0 ? priceTiers : undefined,
       serviceSlots: serviceSlots.length > 0 ? serviceSlots : undefined,
@@ -270,7 +273,7 @@ export default function EditProductScreen() {
         });
       }
     }
-    updateProduct(product.id, {
+    updateProductMutation.mutate({ id: product.id, updates: {
       title: payload.title,
       description: payload.description,
       price: payload.price,
@@ -284,7 +287,7 @@ export default function EditProductScreen() {
       eventTime: payload.eventTime,
       categories: payload.categories,
       tags: payload.tags,
-    });
+    } });
     setSaving(false);
     router.back();
   };
@@ -306,7 +309,7 @@ export default function EditProductScreen() {
             Alert.alert("Error", "Could not delete product.");
             return;
           }
-          deleteProduct(product.id);
+          deleteProductMutation.mutate(product.id);
           router.replace("/(tabs)/profile");
         },
       },
@@ -550,7 +553,7 @@ export default function EditProductScreen() {
               </>
             )}
             <TouchableOpacity
-              onPress={() => tags.length > 0 && saveTagsToProfile(tags)}
+              onPress={() => tags.length > 0 && saveTagsMutation.mutate(tags)}
               disabled={tags.length === 0}
               className="rounded-full border border-violet-500/50 px-3 py-1.5"
             >

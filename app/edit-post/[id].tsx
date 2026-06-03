@@ -16,9 +16,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import type { PostType } from "../../context/ContentContext";
+import type { PostType } from "../../lib/product-types";
 import { useAuth } from "../../context/AuthContext";
-import { useProfile } from "../../context/ProfileContext";
+import { useMyProfileQuery } from "../../hooks/useProfileQuery";
+import { useSaveTagsMutation } from "../../hooks/useProfileMutations";
 import { getHashtagsFromPostContent, syncPostHashtags } from "../../lib/hashtags";
 import { uploadPostMedia } from "../../lib/postUpload";
 import {
@@ -88,8 +89,9 @@ export default function EditPostScreen() {
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [hashtagInput, setHashtagInput] = useState("");
 
-  const { profile, saveTagsToProfile } = useProfile();
-  const savedHashtags = profile.categoryTags ?? [];
+  const { data: myProfile } = useMyProfileQuery(user?.id);
+  const saveTagsMutation = useSaveTagsMutation();
+  const savedHashtags = myProfile?.category_tags ?? [];
 
   const normalizeTag = (raw: string) => raw.replace(/^#/, "").replace(/[^a-zA-Z0-9_]/g, "").toLowerCase().trim();
   const addHashtag = (raw: string) => {
@@ -384,7 +386,7 @@ export default function EditPostScreen() {
               </>
             )}
             <TouchableOpacity
-              onPress={() => hashtags.length > 0 && saveTagsToProfile(hashtags)}
+              onPress={() => hashtags.length > 0 && saveTagsMutation.mutate(hashtags)}
               disabled={hashtags.length === 0}
               className="rounded-full border border-violet-500/50 px-3 py-1.5"
             >

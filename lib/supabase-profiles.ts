@@ -34,6 +34,7 @@ export type ProfileRow = {
   updated_at: string;
   stripe_connect_account_id?: string | null;
   reputation_score?: number | null;
+  level?: number | null;
   verified_tier?: string | null;
   email?: string | null;
   password_hash?: string | null;

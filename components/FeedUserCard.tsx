@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { Avatar } from "./ui";
-import type { Product } from "../context/ContentContext";
+import type { Product } from "../lib/product-types";
 import { rowToProduct } from "../lib/supabase-products";
 import supabase from "../lib/supabase";
 import type { ProfileRow } from "../lib/supabase-profiles";
