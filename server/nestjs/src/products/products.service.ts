@@ -73,6 +73,16 @@ export class ProductsService {
     return rows[0];
   }
 
+  async getCrossSell(creatorId: string, productType: string, excludeId: string, limit = 6): Promise<unknown[]> {
+    return this.db.query(
+      `SELECT p.*, pr.username, pr.display_name, pr.avatar_url
+       FROM products p JOIN profiles pr ON pr.id = p.creator_id
+       WHERE (p.creator_id = $1 OR p.type = $2) AND p.id != $3
+       ORDER BY p.created_at DESC LIMIT $4`,
+      [creatorId, productType, excludeId, limit]
+    );
+  }
+
   async search(query: string, limit = 20): Promise<unknown[]> {
     return this.db.query(
       `SELECT p.*, pr.username, pr.display_name, pr.avatar_url,
