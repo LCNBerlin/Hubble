@@ -18,14 +18,9 @@ export class ProductsController {
     return this.products.getByCreator(creatorId);
   }
 
-  @Get("cross-sell")
-  getCrossSell(
-    @Query("creatorId") creatorId: string,
-    @Query("type") type: string,
-    @Query("excludeId") excludeId: string,
-    @Query("limit") limit = "6"
-  ) {
-    return this.products.getCrossSell(creatorId, type, excludeId, Number(limit));
+  @Get(":id/related")
+  getRelated(@Param("id") id: string) {
+    return this.products.getRelated(id);
   }
 
   @Get(":id")

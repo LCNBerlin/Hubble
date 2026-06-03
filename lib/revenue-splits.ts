@@ -58,6 +58,6 @@ export async function deleteRevenueSplit(splitId: string, _ownerId: string): Pro
   }
 }
 
-export async function deleteRevenueSplitsByTarget(targetType: "post" | "product", targetId: string): Promise<void> {
-  await apiDelete(`/revenue-splits/by-target?targetType=${targetType}&targetId=${encodeURIComponent(targetId)}`);
+export async function deleteRevenueSplitsForTarget(targetType: "post" | "product", targetId: string): Promise<void> {
+  await apiDelete(`/revenue-splits/by-target?targetType=${targetType}&targetId=${targetId}`);
 }

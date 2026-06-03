@@ -1,18 +1,18 @@
-import { Controller, Get, Patch, Post, Delete, Param, Body, Query, UseGuards, HttpCode } from "@nestjs/common";
+import { Controller, Get, Patch, Post, Delete, Param, Body, Query, UseGuards } from "@nestjs/common";
 import { ProfilesService } from "./profiles.service";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { CurrentUser, JwtUser } from "../common/decorators/current-user.decorator";
-import { IsOptional, IsString, IsUrl } from "class-validator";
+import { IsOptional, IsString, IsNumber } from "class-validator";
 
 class UpdateProfileDto {
   @IsOptional() @IsString() username?: string;
   @IsOptional() @IsString() displayName?: string;
   @IsOptional() @IsString() bio?: string;
-  @IsOptional() @IsUrl() avatarUrl?: string;
-  @IsOptional() @IsUrl() bannerUrl?: string;
+  @IsOptional() @IsString() avatarUrl?: string;
+  @IsOptional() @IsString() bannerUrl?: string;
   @IsOptional() @IsString() location?: string;
-  @IsOptional() lat?: number | null;
-  @IsOptional() lng?: number | null;
+  @IsOptional() @IsNumber() lat?: number;
+  @IsOptional() @IsNumber() lng?: number;
 }
 
 @Controller("profiles")
@@ -71,12 +71,12 @@ export class ProfilesController {
 
   @Get("me/saved-posts")
   getSavedPosts(@CurrentUser() user: JwtUser) {
-    return this.profiles.getSavedPosts(user.sub);
+    return this.profiles.getSavedPostsFull(user.sub);
   }
 
   @Get("me/saved-products")
   getSavedProducts(@CurrentUser() user: JwtUser) {
-    return this.profiles.getSavedProducts(user.sub);
+    return this.profiles.getSavedProductsFull(user.sub);
   }
 
   @Post("me/save-post/:postId")
@@ -114,11 +114,5 @@ export class ProfilesController {
   @Get(":id/follow-status")
   followStatus(@CurrentUser() user: JwtUser, @Param("id") targetId: string) {
     return this.profiles.isFollowing(user.sub, targetId).then((isFollowing) => ({ isFollowing }));
-  }
-
-  @Post(":id/report")
-  @HttpCode(204)
-  report(@CurrentUser() user: JwtUser, @Param("id") reportedId: string, @Body() body: { reason: string }) {
-    return this.profiles.reportUser(user.sub, reportedId, body.reason);
   }
 }

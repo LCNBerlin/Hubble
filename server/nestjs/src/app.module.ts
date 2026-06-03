@@ -17,8 +17,10 @@ import { MessagingModule } from "./messaging/messaging.module";
 import { ProductsModule } from "./products/products.module";
 import { OrdersModule } from "./orders/orders.module";
 import { CommerceModule } from "./commerce/commerce.module";
-import { StoriesModule } from "./stories/stories.module";
 import { EventsModule } from "./events/events.module";
+import { ReportsModule } from "./reports/reports.module";
+import { RevenueSplitsModule } from "./revenue-splits/revenue-splits.module";
+import { StoriesModule } from "./stories/stories.module";
 
 @Module({
   imports: [
@@ -40,8 +42,10 @@ import { EventsModule } from "./events/events.module";
     ProductsModule,
     OrdersModule,
     CommerceModule,
-    StoriesModule,
     EventsModule,
+    ReportsModule,
+    RevenueSplitsModule,
+    StoriesModule,
   ],
 })
 export class AppModule {}
