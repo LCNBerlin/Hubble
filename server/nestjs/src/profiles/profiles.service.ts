@@ -115,6 +115,28 @@ export class ProfilesService {
     return rows.map((r: { product_id: string }) => r.product_id);
   }
 
+  async getSavedPosts(userId: string): Promise<unknown[]> {
+    return this.dataSource.query(
+      `SELECT p.id, p.type, p.title, p.body, p.media_uri, p.thumbnail_uri
+       FROM saved_posts sp
+       JOIN posts p ON p.id = sp.post_id
+       WHERE sp.user_id = $1
+       ORDER BY sp.created_at DESC`,
+      [userId]
+    );
+  }
+
+  async getSavedProducts(userId: string): Promise<unknown[]> {
+    return this.dataSource.query(
+      `SELECT p.*
+       FROM saved_products sp
+       JOIN products p ON p.id = sp.product_id
+       WHERE sp.user_id = $1
+       ORDER BY sp.created_at DESC`,
+      [userId]
+    );
+  }
+
   async toggleSavePost(userId: string, postId: string): Promise<{ saved: boolean }> {
     const existing = await this.dataSource.query(`SELECT 1 FROM saved_posts WHERE user_id = $1 AND post_id = $2`, [userId, postId]);
     if (existing[0]) {

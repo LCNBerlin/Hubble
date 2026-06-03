@@ -30,6 +30,7 @@ import { useEventsByUserQuery } from "../../hooks/useEventsQuery";
 import { usePostEngagement } from "../../hooks/usePostEngagement";
 import { CREATOR_AVATAR } from "../../lib/constants";
 import { rowToProduct } from "../../lib/supabase-products";
+import { apiGet } from "../../lib/api";
 import supabase from "../../lib/supabase";
 
 type ProfileTabId = "posts" | "products" | "events" | "saved";
@@ -721,31 +722,25 @@ export default function ProfileScreen() {
   const [savedProductsLoading, setSavedProductsLoading] = useState(false);
 
   const fetchMyPosts = useCallback(async () => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setMyPosts([]);
       setMyPostsLoading(false);
       return;
     }
     setMyPostsLoading(true);
     try {
-      const { data } = await supabase
-        .from("posts")
-        .select("id, type, title, body, media_uri, thumbnail_uri, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-      if (data) {
-        setMyPosts(
-          data.map((row: { id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null; created_at?: string }) => ({
-            id: row.id,
-            type: row.type as PostType,
-            title: row.title ?? "",
-            body: row.body ?? undefined,
-            mediaUri: row.media_uri ?? undefined,
-            thumbnailUri: row.thumbnail_uri ?? undefined,
-            ...(row.created_at != null && { createdAt: row.created_at }),
-          }))
-        );
-      } else setMyPosts([]);
+      const data = await apiGet<Array<{ id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null; created_at?: string }>>(`/posts/by-user/${user.id}`);
+      setMyPosts(
+        data.map((row) => ({
+          id: row.id,
+          type: row.type as PostType,
+          title: row.title ?? "",
+          body: row.body ?? undefined,
+          mediaUri: row.media_uri ?? undefined,
+          thumbnailUri: row.thumbnail_uri ?? undefined,
+          ...(row.created_at != null && { createdAt: row.created_at }),
+        }))
+      );
     } catch {
       setMyPosts([]);
     } finally {
@@ -754,21 +749,15 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   const fetchMyProducts = useCallback(async () => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setMyProducts([]);
       setMyProductsLoading(false);
       return;
     }
     setMyProductsLoading(true);
     try {
-      const { data } = await supabase
-        .from("products")
-        .select("*")
-        .eq("creator_id", user.id)
-        .order("created_at", { ascending: false });
-      if (data) {
-        setMyProducts(data.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-      } else setMyProducts([]);
+      const data = await apiGet<Parameters<typeof rowToProduct>[0][]>(`/products/by-creator/${user.id}`);
+      setMyProducts(data.map((row) => rowToProduct(row)));
     } catch {
       setMyProducts([]);
     } finally {
@@ -777,39 +766,24 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   const fetchSavedPosts = useCallback(async () => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setSavedPosts([]);
       setSavedPostsLoading(false);
       return;
     }
     setSavedPostsLoading(true);
     try {
-      const { data: savedRows } = await supabase.from("saved_posts").select("post_id").eq("user_id", user.id);
-      const postIds = (savedRows ?? []).map((r: { post_id: string }) => r.post_id);
-      if (postIds.length === 0) {
-        setSavedPosts([]);
-        setSavedPostsLoading(false);
-        return;
-      }
-      const { data: postsData } = await supabase.from("posts").select("id, type, title, body, media_uri, thumbnail_uri").in("id", postIds);
-      if (postsData) {
-        const byId = new Map((postsData as { id: string }[]).map((r) => [r.id, r]));
-        setSavedPosts(
-          (postIds as string[])
-            .filter((id: string) => byId.has(id))
-            .map((id: string) => {
-              const row = byId.get(id) as { id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null };
-              return {
-                id: row.id,
-                type: row.type as PostType,
-                title: row.title ?? "",
-                body: row.body ?? undefined,
-                mediaUri: row.media_uri ?? undefined,
-                thumbnailUri: row.thumbnail_uri ?? undefined,
-              };
-            })
-        );
-      } else setSavedPosts([]);
+      const data = await apiGet<Array<{ id: string; type: string; title: string | null; body: string | null; media_uri: string | null; thumbnail_uri?: string | null }>>("/profiles/me/saved-posts");
+      setSavedPosts(
+        data.map((row) => ({
+          id: row.id,
+          type: row.type as PostType,
+          title: row.title ?? "",
+          body: row.body ?? undefined,
+          mediaUri: row.media_uri ?? undefined,
+          thumbnailUri: row.thumbnail_uri ?? undefined,
+        }))
+      );
     } catch {
       setSavedPosts([]);
     } finally {
@@ -818,24 +792,15 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   const fetchSavedProducts = useCallback(async () => {
-    if (!supabase || !user?.id) {
+    if (!user?.id) {
       setSavedProducts([]);
       setSavedProductsLoading(false);
       return;
     }
     setSavedProductsLoading(true);
     try {
-      const { data: savedRows } = await supabase.from("saved_products").select("product_id").eq("user_id", user.id);
-      const productIds = (savedRows ?? []).map((r: { product_id: string }) => r.product_id);
-      if (productIds.length === 0) {
-        setSavedProducts([]);
-        setSavedProductsLoading(false);
-        return;
-      }
-      const { data: productsData } = await supabase.from("products").select("*").in("id", productIds);
-      if (productsData) {
-        setSavedProducts(productsData.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-      } else setSavedProducts([]);
+      const data = await apiGet<Parameters<typeof rowToProduct>[0][]>("/profiles/me/saved-products");
+      setSavedProducts(data.map((row) => rowToProduct(row)));
     } catch {
       setSavedProducts([]);
     } finally {
