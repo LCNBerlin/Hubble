@@ -24,7 +24,7 @@ import {
   updateRevenueSplit,
   type RevenueSplitWithPartner,
 } from "../lib/revenue-splits";
-import supabase from "../lib/supabase";
+import { apiGet } from "../lib/api";
 
 type ProductRow = {
   id: string;
@@ -193,19 +193,11 @@ export default function RevenueSplitsScreen() {
       return;
     }
     setLoading(true);
-    const [productsRes, splitsRes] = await Promise.all([
-      supabase
-        .from("products")
-        .select("id, creator_id, title, type, price")
-        .eq("creator_id", user.id)
-        .order("created_at", { ascending: false }),
+    const [productsData, splitsRes] = await Promise.all([
+      apiGet<ProductRow[]>(`/products/by-creator/${user.id}`).catch(() => null),
       getRevenueSplitsForOwner(user.id, "product"),
     ]);
-    if (productsRes.error) {
-      setProducts([]);
-    } else {
-      setProducts((productsRes.data as ProductRow[]) ?? []);
-    }
+    setProducts(productsData ?? []);
     setSplits(splitsRes);
     setLoading(false);
   }, [user?.id]);
