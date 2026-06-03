@@ -10,8 +10,8 @@ async function bootstrap() {
   app.enableCors({ origin: true });
 
   const port = process.env.PORT || 4243;
-  await app.listen(port);
-  console.log(`Hubble API running on http://localhost:${port}/api`);
+  await app.listen(port, "0.0.0.0");
+  console.log(`Hubble API running on port ${port}`);
 }
 
 bootstrap();
