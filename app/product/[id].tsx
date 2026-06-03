@@ -29,7 +29,7 @@ import {
     type ProductVariant,
 } from "../../context/ContentContext";
 import { useWishlist } from "../../context/WishlistContext";
-import supabase from "../../lib/supabase";
+import { apiGet } from "../../lib/api";
 import { rowToProduct } from "../../lib/supabase-products";
 import type { ProfileRow } from "../../lib/supabase-profiles";
 import { addViewedProduct } from "../../lib/viewed-products";
@@ -90,13 +90,9 @@ export default function ProductScreen() {
   const [creatorProfile, setCreatorProfile] = useState<ProfileRow | null>(null);
 
   useEffect(() => {
-    if (!id || !supabase) return;
-    supabase
-      .from("products")
-      .select("*")
-      .eq("id", id)
-      .single()
-      .then(({ data }) => {
+    if (!id) return;
+    apiGet<unknown>(`/products/${id}`)
+      .then((data) => {
         if (data) setProductFromServer(rowToProduct(data as Parameters<typeof rowToProduct>[0]));
         else setProductFromServer(null);
       })
@@ -108,24 +104,16 @@ export default function ProductScreen() {
   }, [id, loadReviewsForProduct]);
 
   useEffect(() => {
-    if (!product?.creatorId || !product?.id || !product?.type || !supabase) {
+    if (!product?.id) {
       setCrossSellProducts([]);
       return;
     }
-    supabase
-      .from("products")
-      .select("*")
-      .or(`creator_id.eq.${product.creatorId},type.eq.${product.type}`)
-      .neq("id", product.id)
-      .order("created_at", { ascending: false })
-      .limit(6)
-      .then(({ data }) => {
-        if (data) {
-          setCrossSellProducts(data.map((row: unknown) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
-        } else setCrossSellProducts([]);
+    apiGet<unknown[]>(`/products/${product.id}/related`)
+      .then((data) => {
+        setCrossSellProducts((data ?? []).map((row) => rowToProduct(row as Parameters<typeof rowToProduct>[0])));
       })
       .catch(() => setCrossSellProducts([]));
-  }, [product?.id, product?.creatorId, product?.type]);
+  }, [product?.id]);
 
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewBody, setReviewBody] = useState("");
@@ -143,13 +131,10 @@ export default function ProductScreen() {
   const outOfStock = inventoryStatus === "out_of_stock";
 
   useEffect(() => {
-    if (!product?.creatorId || !supabase) return;
-    supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", product.creatorId)
-      .single()
-      .then(({ data }) => setCreatorProfile(data as ProfileRow | null));
+    if (!product?.creatorId) return;
+    apiGet<ProfileRow>(`/profiles/${product.creatorId}`)
+      .then((data) => setCreatorProfile(data ?? null))
+      .catch(() => setCreatorProfile(null));
   }, [product?.creatorId]);
 
   const crossSell = crossSellProducts;

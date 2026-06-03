@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Text, View } from "react-native";
 import { PostCard } from "./PostCard";
-import supabase from "../lib/supabase";
+import { apiGet } from "../lib/api";
 import type { ProfileRow, PostRow } from "../lib/supabase-profiles";
 
 const RANDOM_BATCH_SIZE = 20;
@@ -71,21 +71,12 @@ export function FeedRandomPostsCarousel({
 
   const fetchBatch = useCallback(
     async (exclude: string[]) => {
-      if (!supabase || !creatorId) return [];
-      const query = supabase
-        .from("posts")
-        .select("*, profiles!user_id(display_name, username, avatar_url), post_hashtags(hashtags(name))")
-        .eq("user_id", creatorId)
-        .order("created_at", { ascending: false })
-        .limit(RANDOM_FETCH_LIMIT);
-      const { data, error } = await query;
-      if (error) return [];
-      const list: FeedPostCarouselItem[] = (data ?? [])
-        .filter((row: Record<string, unknown>) => !exclude.includes(row.id as string))
-        .map((row: Record<string, unknown>) => {
-          const phList = (row.post_hashtags as Array<{ hashtags: { name: string } | null }> | undefined) ?? [];
-          const hashtags = phList.map((ph) => ph.hashtags?.name).filter((n): n is string => !!n);
-          return {
+      if (!creatorId) return [];
+      try {
+        const data = await apiGet<Record<string, unknown>[]>(`/posts/by-user/${creatorId}`);
+        const list: FeedPostCarouselItem[] = (data ?? [])
+          .filter((row) => !exclude.includes(row.id as string))
+          .map((row) => ({
             post: {
               id: row.id as string,
               user_id: row.user_id as string,
@@ -95,13 +86,17 @@ export function FeedRandomPostsCarousel({
               media_uri: row.media_uri as string | null,
               created_at: row.created_at as string,
               place_name: (row.place_name as string | null) ?? null,
-              hashtags,
+              hashtags: Array.isArray(row.hashtag_names) ? (row.hashtag_names as string[]) : [],
               poll_options: Array.isArray(row.poll_options) ? (row.poll_options as string[]) : undefined,
             },
-            profile: row.profiles as ProfileRow | null,
-          };
-        });
-      return list.slice(0, RANDOM_BATCH_SIZE);
+            profile: row.username
+              ? ({ display_name: row.display_name, username: row.username, avatar_url: row.avatar_url } as ProfileRow)
+              : null,
+          }));
+        return list.slice(0, RANDOM_BATCH_SIZE);
+      } catch {
+        return [];
+      }
     },
     [creatorId]
   );

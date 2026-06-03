@@ -2,14 +2,17 @@ import { Controller, Get, Patch, Post, Delete, Param, Body, Query, UseGuards } f
 import { ProfilesService } from "./profiles.service";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { CurrentUser, JwtUser } from "../common/decorators/current-user.decorator";
-import { IsOptional, IsString, IsUrl } from "class-validator";
+import { IsOptional, IsString, IsNumber } from "class-validator";
 
 class UpdateProfileDto {
   @IsOptional() @IsString() username?: string;
   @IsOptional() @IsString() displayName?: string;
   @IsOptional() @IsString() bio?: string;
-  @IsOptional() @IsUrl() avatarUrl?: string;
-  @IsOptional() @IsUrl() bannerUrl?: string;
+  @IsOptional() @IsString() avatarUrl?: string;
+  @IsOptional() @IsString() bannerUrl?: string;
+  @IsOptional() @IsString() location?: string;
+  @IsOptional() @IsNumber() lat?: number;
+  @IsOptional() @IsNumber() lng?: number;
 }
 
 @Controller("profiles")

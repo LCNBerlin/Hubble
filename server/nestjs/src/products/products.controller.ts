@@ -18,6 +18,11 @@ export class ProductsController {
     return this.products.getByCreator(creatorId);
   }
 
+  @Get(":id/related")
+  getRelated(@Param("id") id: string) {
+    return this.products.getRelated(id);
+  }
+
   @Get(":id")
   getById(@Param("id") id: string) {
     return this.products.getById(id);

@@ -22,7 +22,7 @@ import {
   Accuracy as LocationAccuracy,
 } from "../lib/location";
 import { pickBannerImage, pickProfileImage, uploadProfileImage } from "../lib/profileUpload";
-import supabase from "../lib/supabase";
+import { apiPatch } from "../lib/api";
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -54,7 +54,7 @@ export default function EditProfileScreen() {
   }, [profile.displayName, profile.username, profile.bio, profile.location, profile.lat, profile.lng, profile.avatarUri, profile.bannerUri]);
 
   const handleSave = useCallback(async () => {
-    if (!user?.id || !supabase) return;
+    if (!user?.id) return;
     const trimmedDisplay = displayName.trim();
     const trimmedUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^_|_$/g, "") || "user";
     const trimmedBio = bio.trim();
@@ -65,39 +65,35 @@ export default function EditProfileScreen() {
       return;
     }
 
-    // Avoid saving while avatar/banner uploads are in-flight to prevent partial state.
     if (avatarUploading || bannerUploading) {
       Alert.alert("Please wait", "Profile photo or banner is still uploading. Try saving again in a moment.");
       return;
     }
 
     setSaving(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        display_name: trimmedDisplay || null,
+    try {
+      await apiPatch("/profiles/me", {
+        displayName: trimmedDisplay || null,
         username: trimmedUsername,
         bio: trimmedBio || null,
         location: trimmedLocation || null,
         lat: lat ?? null,
         lng: lng ?? null,
-        avatar_url: avatarUri || null,
-        banner_url: bannerUri || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", user.id);
-
-    setSaving(false);
-    if (error) {
-      if (error.code === "23505") {
+        avatarUrl: avatarUri || null,
+        bannerUrl: bannerUri || null,
+      });
+      await refetchProfile();
+      router.back();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("23505") || msg.toLowerCase().includes("username")) {
         Alert.alert("Username taken", "That username is already in use. Try another.");
       } else {
-        Alert.alert("Error", error.message || "Could not save profile.");
+        Alert.alert("Error", msg || "Could not save profile.");
       }
-      return;
+    } finally {
+      setSaving(false);
     }
-    await refetchProfile();
-    router.back();
   }, [user?.id, displayName, username, bio, location, lat, lng, avatarUri, bannerUri, avatarUploading, bannerUploading, refetchProfile, router]);
 
   const handleChangeAvatar = useCallback(async () => {

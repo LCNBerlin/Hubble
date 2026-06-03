@@ -73,6 +73,22 @@ export class ProductsService {
     return rows[0];
   }
 
+  async getRelated(productId: string, limit = 6): Promise<unknown[]> {
+    const rows = await this.db.query(
+      `SELECT creator_id, product_type FROM products WHERE id = $1`,
+      [productId]
+    );
+    if (!rows[0]) return [];
+    const { creator_id, product_type } = rows[0];
+    return this.db.query(
+      `SELECT p.*, pr.username, pr.display_name, pr.avatar_url
+       FROM products p JOIN profiles pr ON pr.id = p.creator_id
+       WHERE (p.creator_id = $1 OR p.product_type = $2) AND p.id != $3
+       ORDER BY p.created_at DESC LIMIT $4`,
+      [creator_id, product_type, productId, limit]
+    );
+  }
+
   async search(query: string, limit = 20): Promise<unknown[]> {
     return this.db.query(
       `SELECT p.*, pr.username, pr.display_name, pr.avatar_url,

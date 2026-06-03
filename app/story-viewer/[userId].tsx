@@ -4,7 +4,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dimensions, Pressable, Text, View } from "react-native";
-import supabase from "../../lib/supabase";
+import { apiGet } from "../../lib/api";
 
 type StoryRow = {
   id: string;
@@ -25,21 +25,14 @@ export default function StoryViewerScreen() {
   const { width, height } = Dimensions.get("window");
 
   useEffect(() => {
-    if (!userId || !supabase) return;
+    if (!userId) return;
     (async () => {
-      const { data: storyData } = await supabase
-        .from("stories")
-        .select("id, media_uri, type, created_at")
-        .eq("user_id", userId)
-        .gt("expires_at", new Date().toISOString())
-        .order("created_at", { ascending: true });
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("display_name, username")
-        .eq("id", userId)
-        .maybeSingle();
-      setStories((storyData ?? []) as StoryRow[]);
-      setProfile(profileData as { display_name: string | null; username: string } | null);
+      const [storyData, profileData] = await Promise.all([
+        apiGet<StoryRow[]>(`/stories/by-user/${userId}`).catch(() => [] as StoryRow[]),
+        apiGet<{ display_name: string | null; username: string } | null>(`/profiles/${userId}`).catch(() => null),
+      ]);
+      setStories(storyData ?? []);
+      setProfile(profileData);
     })();
   }, [userId]);
 

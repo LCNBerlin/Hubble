@@ -20,6 +20,7 @@ import { CommerceModule } from "./commerce/commerce.module";
 import { EventsModule } from "./events/events.module";
 import { ReportsModule } from "./reports/reports.module";
 import { RevenueSplitsModule } from "./revenue-splits/revenue-splits.module";
+import { StoriesModule } from "./stories/stories.module";
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { RevenueSplitsModule } from "./revenue-splits/revenue-splits.module";
     EventsModule,
     ReportsModule,
     RevenueSplitsModule,
+    StoriesModule,
   ],
 })
 export class AppModule {}

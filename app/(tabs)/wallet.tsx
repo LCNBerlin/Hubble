@@ -27,7 +27,7 @@ import { useProfile } from "../../context/ProfileContext";
 import { useCreatorPayouts } from "../../hooks/useCreatorPayouts";
 import { useOrdersForWallet } from "../../hooks/useOrdersForWallet";
 import { useWalletLayout } from "../../lib/wallet-grid";
-import supabase from "../../lib/supabase";
+import { apiGet } from "../../lib/api";
 import type { OrderWithItems } from "../../hooks/useOrdersForWallet";
 
 const MOBILE_TABS: { key: WalletSection; label: string }[] = [
@@ -56,25 +56,19 @@ export default function WalletScreen() {
   const [stripeConnectAccountId, setStripeConnectAccountId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user?.id || !supabase) return;
-    supabase
-      .from("profiles")
-      .select("stripe_connect_account_id")
-      .eq("id", user.id)
-      .single()
-      .then(({ data }) => setStripeConnectAccountId(data?.stripe_connect_account_id ?? null));
+    if (!user?.id) return;
+    apiGet<{ stripeConnectAccountId: string | null }>("/profiles/me")
+      .then((p) => setStripeConnectAccountId(p?.stripeConnectAccountId ?? null))
+      .catch(() => {});
   }, [user?.id]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([refresh(), refreshPayouts()]);
-    if (user?.id && supabase) {
-      const { data } = await supabase
-        .from("profiles")
-        .select("stripe_connect_account_id")
-        .eq("id", user.id)
-        .single();
-      setStripeConnectAccountId(data?.stripe_connect_account_id ?? null);
+    if (user?.id) {
+      apiGet<{ stripeConnectAccountId: string | null }>("/profiles/me")
+        .then((p) => setStripeConnectAccountId(p?.stripeConnectAccountId ?? null))
+        .catch(() => {});
     }
     setRefreshing(false);
   }, [refresh, refreshPayouts, user?.id]);
