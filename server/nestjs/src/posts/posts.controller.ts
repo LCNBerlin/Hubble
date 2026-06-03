@@ -75,12 +75,22 @@ export class PostsController {
   }
 
   @Get(":id/comments")
-  getComments(@Param("id") id: string) {
-    return this.posts.getComments(id);
+  getComments(@Param("id") id: string, @CurrentUser() user: JwtUser) {
+    return this.posts.getComments(id, user.sub);
   }
 
   @Post(":id/comments")
   addComment(@Param("id") id: string, @CurrentUser() user: JwtUser, @Body() body: { body: string; parentId?: string }) {
     return this.posts.addComment(id, user.sub, body.body, body.parentId);
+  }
+
+  @Post(":postId/comments/:commentId/like")
+  toggleCommentLike(@Param("commentId") commentId: string, @CurrentUser() user: JwtUser) {
+    return this.posts.toggleCommentLike(commentId, user.sub);
+  }
+
+  @Post(":postId/comments/:commentId/dislike")
+  toggleCommentDislike(@Param("commentId") commentId: string, @CurrentUser() user: JwtUser) {
+    return this.posts.toggleCommentDislike(commentId, user.sub);
   }
 }

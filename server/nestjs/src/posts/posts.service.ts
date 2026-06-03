@@ -129,13 +129,73 @@ export class PostsService {
     return { reposted: !existing[0], count: Number(count[0]?.cnt ?? 0) };
   }
 
-  async getComments(postId: string): Promise<unknown[]> {
-    return this.db.query(
-      `SELECT c.*, pr.username, pr.display_name, pr.avatar_url
-       FROM post_comments c JOIN profiles pr ON pr.id = c.user_id
-       WHERE c.post_id = $1 ORDER BY c.created_at ASC`,
-      [postId]
+  async getComments(postId: string, viewerId?: string): Promise<unknown[]> {
+    const rows = await this.db.query(
+      `SELECT c.id, c.body, c.created_at, c.user_id, c.parent_id,
+        pr.username, pr.display_name, pr.avatar_url,
+        COUNT(DISTINCT cl.user_id)::int AS like_count,
+        COUNT(DISTINCT cd.user_id)::int AS dislike_count,
+        (CASE WHEN $2::uuid IS NOT NULL AND EXISTS(SELECT 1 FROM comment_likes WHERE comment_id = c.id AND user_id = $2::uuid) THEN true ELSE false END) AS is_liked,
+        (CASE WHEN $2::uuid IS NOT NULL AND EXISTS(SELECT 1 FROM comment_dislikes WHERE comment_id = c.id AND user_id = $2::uuid) THEN true ELSE false END) AS is_disliked
+       FROM post_comments c
+       JOIN profiles pr ON pr.id = c.user_id
+       LEFT JOIN comment_likes cl ON cl.comment_id = c.id
+       LEFT JOIN comment_dislikes cd ON cd.comment_id = c.id
+       WHERE c.post_id = $1
+       GROUP BY c.id, pr.username, pr.display_name, pr.avatar_url
+       ORDER BY c.created_at ASC`,
+      [postId, viewerId || null]
     );
+    return rows.map((r: Record<string, unknown>) => ({
+      id: r.id,
+      body: r.body,
+      created_at: r.created_at,
+      user_id: r.user_id,
+      parent_id: r.parent_id ?? null,
+      like_count: Number(r.like_count ?? 0),
+      dislike_count: Number(r.dislike_count ?? 0),
+      is_liked: Boolean(r.is_liked),
+      is_disliked: Boolean(r.is_disliked),
+      author: { display_name: r.display_name ?? null, username: r.username ?? "", avatar_url: r.avatar_url ?? null },
+    }));
+  }
+
+  async toggleCommentLike(commentId: string, userId: string): Promise<{ liked: boolean; likeCount: number; dislikeCount: number }> {
+    const existing = await this.db.query(`SELECT 1 FROM comment_likes WHERE comment_id = $1 AND user_id = $2`, [commentId, userId]);
+    if (existing[0]) {
+      await this.db.query(`DELETE FROM comment_likes WHERE comment_id = $1 AND user_id = $2`, [commentId, userId]);
+    } else {
+      await this.db.query(`INSERT INTO comment_likes (comment_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [commentId, userId]);
+      await this.db.query(`DELETE FROM comment_dislikes WHERE comment_id = $1 AND user_id = $2`, [commentId, userId]);
+    }
+    const counts = await this.db.query(
+      `SELECT COUNT(DISTINCT cl.user_id)::int AS lc, COUNT(DISTINCT cd.user_id)::int AS dc
+       FROM post_comments c
+       LEFT JOIN comment_likes cl ON cl.comment_id = c.id
+       LEFT JOIN comment_dislikes cd ON cd.comment_id = c.id
+       WHERE c.id = $1 GROUP BY c.id`,
+      [commentId]
+    );
+    return { liked: !existing[0], likeCount: Number(counts[0]?.lc ?? 0), dislikeCount: Number(counts[0]?.dc ?? 0) };
+  }
+
+  async toggleCommentDislike(commentId: string, userId: string): Promise<{ disliked: boolean; likeCount: number; dislikeCount: number }> {
+    const existing = await this.db.query(`SELECT 1 FROM comment_dislikes WHERE comment_id = $1 AND user_id = $2`, [commentId, userId]);
+    if (existing[0]) {
+      await this.db.query(`DELETE FROM comment_dislikes WHERE comment_id = $1 AND user_id = $2`, [commentId, userId]);
+    } else {
+      await this.db.query(`INSERT INTO comment_dislikes (comment_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [commentId, userId]);
+      await this.db.query(`DELETE FROM comment_likes WHERE comment_id = $1 AND user_id = $2`, [commentId, userId]);
+    }
+    const counts = await this.db.query(
+      `SELECT COUNT(DISTINCT cl.user_id)::int AS lc, COUNT(DISTINCT cd.user_id)::int AS dc
+       FROM post_comments c
+       LEFT JOIN comment_likes cl ON cl.comment_id = c.id
+       LEFT JOIN comment_dislikes cd ON cd.comment_id = c.id
+       WHERE c.id = $1 GROUP BY c.id`,
+      [commentId]
+    );
+    return { disliked: !existing[0], likeCount: Number(counts[0]?.lc ?? 0), dislikeCount: Number(counts[0]?.dc ?? 0) };
   }
 
   async addComment(postId: string, userId: string, body: string, parentId?: string): Promise<unknown> {
