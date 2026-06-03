@@ -1024,11 +1024,11 @@ export default function MarketplaceScreen() {
           </Pressable>
           <Pressable
             onPress={() => setView("wishlist")}
-            className={`relative h-10 w-10 items-center justify-center rounded-lg active:opacity-80 ${view === "wishlist" ? "bg-violet-600/30" : "bg-zinc-700"}`}
+            className="relative h-10 w-10 items-center justify-center rounded-lg active:opacity-80 bg-zinc-700"
             accessibilityRole="button"
             accessibilityLabel="Wishlist"
           >
-            <Ionicons name={view === "wishlist" ? "heart" : "heart-outline"} size={20} color="#a78bfa" />
+            <Ionicons name="heart-outline" size={20} color="#a78bfa" />
             {wishlistItems.length > 0 && (
               <View className="absolute -top-0.5 -right-0.5 min-w-[18] h-[18] rounded-full bg-violet-500 items-center justify-center px-1">
                 <Text className="text-[10px] font-bold text-white">
@@ -1039,7 +1039,7 @@ export default function MarketplaceScreen() {
           </Pressable>
           <Pressable
             onPress={() => setView("cart")}
-            className={`relative h-10 w-10 items-center justify-center rounded-lg active:opacity-80 ${view === "cart" ? "bg-violet-600/30" : "bg-zinc-700"}`}
+            className="relative h-10 w-10 items-center justify-center rounded-lg active:opacity-80 bg-zinc-700"
             accessibilityRole="button"
             accessibilityLabel="Cart"
           >
@@ -1086,7 +1086,6 @@ export default function MarketplaceScreen() {
           ) : (
             <FlatList
               keyExtractor={(item) => item.id}
-              numColumns={2}
               data={rankedProducts.slice(0, displayedCount)}
               ListHeaderComponent={
                 <>

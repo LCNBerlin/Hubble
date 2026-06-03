@@ -20,7 +20,7 @@ import type { PriceTier, ProductType, ServiceSlot } from "../../lib/product-type
 import { useUpdateProductMutation, useDeleteProductMutation } from "../../hooks/useProductsQuery";
 import { useMyProfileQuery } from "../../hooks/useProfileQuery";
 import { useSaveTagsMutation } from "../../hooks/useProfileMutations";
-import { createRevenueSplit, deleteRevenueSplitsByTarget, getProfileIdByUsername, getRevenueSplitsForOwner } from "../../lib/revenue-splits";
+import { createRevenueSplit, deleteRevenueSplitsForTarget, getProfileIdByUsername, getRevenueSplitsForOwner } from "../../lib/revenue-splits";
 import { rowToProduct } from "../../lib/supabase-products";
 import { apiGet } from "../../lib/api";
 
@@ -242,7 +242,7 @@ export default function EditProductScreen() {
         tags: tags.length > 0 ? tags : undefined,
       };
       await updateProductMutation.mutateAsync({ id: product.id, updates });
-      await deleteRevenueSplitsByTarget("product", product.id);
+      await deleteRevenueSplitsForTarget("product", product.id);
       for (const s of parsedSplits) {
         const partnerId = await getProfileIdByUsername(s.partnerUsername);
         if (partnerId) {

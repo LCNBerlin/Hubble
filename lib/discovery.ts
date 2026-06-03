@@ -1,4 +1,4 @@
-import type { Product } from "../context/ContentContext";
+import type { Product } from "./product-types";
 
 export const DISCOVERY_WEIGHTS = {
   /** Sponsored / pinned products get this added to score so they rank higher. */
