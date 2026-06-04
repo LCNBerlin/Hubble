@@ -1,8 +1,16 @@
-import { Module } from "@nestjs/common";
+import { Module, Controller, Get } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { DatabaseModule } from "./common/database/database.module";
+
+@Controller("health")
+class HealthController {
+  @Get()
+  check() {
+    return { status: "ok" };
+  }
+}
 import { RedisModule } from "./common/redis/redis.module";
 import { AuthModule } from "./auth/auth.module";
 import { StorageModule } from "./storage/storage.module";
@@ -23,6 +31,7 @@ import { RevenueSplitsModule } from "./revenue-splits/revenue-splits.module";
 import { StoriesModule } from "./stories/stories.module";
 
 @Module({
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
