@@ -104,8 +104,6 @@ Create a `.env` file at the repo root:
 |---|---|
 | `EXPO_PUBLIC_API_URL` | NestJS API base URL. Use machine LAN IP (e.g. `http://192.168.1.x:4243`) for physical device; `http://localhost:4243` for simulator. |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (`pk_test_...` or `pk_live_...`) |
-| `EXPO_PUBLIC_SUPABASE_URL` | Legacy — not used at runtime. Can be omitted. |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Legacy — not used at runtime. Can be omitted. |
 
 ### 3. Run dev build
 
