@@ -3,9 +3,11 @@ import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { DatabaseModule } from "./common/database/database.module";
+import { Public } from "./common/decorators/public.decorator";
 
 @Controller("health")
 class HealthController {
+  @Public()
   @Get()
   check() {
     return { status: "ok" };
