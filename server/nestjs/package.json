@@ -39,10 +39,10 @@
     "rxjs": "^7.8.1",
     "stripe": "^17.0.0",
     "typeorm": "^0.3.20",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "@nestjs/cli": "^10.4.5"
   },
   "devDependencies": {
-    "@nestjs/cli": "^10.4.5",
     "@nestjs/testing": "^10.4.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
