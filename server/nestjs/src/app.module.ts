@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { HealthController } from "./health/health.controller";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { DatabaseModule } from "./common/database/database.module";
@@ -47,5 +48,6 @@ import { StoriesModule } from "./stories/stories.module";
     RevenueSplitsModule,
     StoriesModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}
