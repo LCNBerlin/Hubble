@@ -17,13 +17,12 @@ export async function uploadStoryImage(
   userId: string,
   base64Data: string,
   mimeType?: string,
-  authToken?: string
 ): Promise<string | null> {
   const { contentType, ext } = getContentTypeAndExt(mimeType);
   const key = `${userId}/${Date.now()}.${ext}`;
   try {
     const arrayBuffer = decode(base64Data);
-    return await uploadToS3("stories", key, arrayBuffer, contentType, authToken);
+    return await uploadToS3("stories", key, arrayBuffer, contentType);
   } catch (e) {
     console.warn("Story upload error:", e);
     return null;

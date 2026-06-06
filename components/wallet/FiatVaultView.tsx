@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import { formatCentsToPrice } from "../../lib/payments";
-import { API_URL } from "../../lib/config";
+import { apiFetch } from "../../lib/api";
 
 const DEPOSIT_METHODS = ["ACH", "Wire", "Card", "Apple Pay"] as const;
 
@@ -34,10 +34,9 @@ export function FiatVaultView({
     if (!userId) return;
     setAddAccountLoading(true);
     try {
-      const res = await fetch(`${API_URL}/connect/onboard`, {
+      const res = await apiFetch("/payments/connect/onboard", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({}),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.url) {

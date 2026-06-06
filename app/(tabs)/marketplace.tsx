@@ -858,7 +858,7 @@ export default function MarketplaceScreen() {
           sum + getProductPriceCents(product, selectedTierIndex ?? 0) * quantity,
         0
       );
-      trackAbandonedCart({ userId: user.id, cartSnapshot: snapshot, subtotalCents: sub }).then(() => {
+      trackAbandonedCart({ cartSnapshot: snapshot, subtotalCents: sub }).then(() => {
         lastAbandonedSent.current = Date.now();
       });
     }, DELAY_MS);
@@ -951,7 +951,6 @@ export default function MarketplaceScreen() {
       } else {
         const confirmResult = await confirmOrder({
           paymentIntentId: paymentIntentId ?? "",
-          buyerId: user.id,
           cartItems: cartItems.map(({ product, quantity, selectedTierIndex }) => ({
             productId: product.id,
             creatorId: product.creatorId ?? null,

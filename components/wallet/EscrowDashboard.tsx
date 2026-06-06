@@ -80,7 +80,7 @@ export function EscrowDashboard({ userId }: { userId: string | undefined }) {
     async (orderId: string) => {
       if (!userId) return;
       setReleasingId(orderId);
-      const result = await confirmDelivery(orderId, userId);
+      const result = await confirmDelivery(orderId);
       setReleasingId(null);
       if (result.ok) refresh();
     },

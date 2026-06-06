@@ -1,39 +1,44 @@
-import { Controller, Get, Param, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, UseGuards, ForbiddenException } from "@nestjs/common";
 import { IncomeService } from "./income.service";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
+import { CurrentUser, JwtUser } from "../common/decorators/current-user.decorator";
 
 @Controller("analytics/income")
 @UseGuards(JwtAuthGuard)
 export class IncomeController {
   constructor(private svc: IncomeService) {}
 
+  private guard(user: JwtUser, creatorId: string) {
+    if (user.sub !== creatorId) throw new ForbiddenException("Access denied");
+  }
+
   @Get(":creatorId/revenue-overview")
-  revenueOverview(@Param("creatorId") id: string) { return this.svc.getRevenueOverview(id); }
+  revenueOverview(@CurrentUser() user: JwtUser, @Param("creatorId") id: string) { this.guard(user, id); return this.svc.getRevenueOverview(id); }
 
   @Get(":creatorId/transaction-metrics")
-  transactionMetrics(@Param("creatorId") id: string) { return this.svc.getTransactionMetrics(id); }
+  transactionMetrics(@CurrentUser() user: JwtUser, @Param("creatorId") id: string) { this.guard(user, id); return this.svc.getTransactionMetrics(id); }
 
   @Get(":creatorId/unit-economics")
-  unitEconomics(@Param("creatorId") id: string) { return this.svc.getUnitEconomics(id); }
+  unitEconomics(@CurrentUser() user: JwtUser, @Param("creatorId") id: string) { this.guard(user, id); return this.svc.getUnitEconomics(id); }
 
   @Get(":creatorId/cash-flow")
-  cashFlow(@Param("creatorId") id: string) { return this.svc.getCashFlowDynamics(id); }
+  cashFlow(@CurrentUser() user: JwtUser, @Param("creatorId") id: string) { this.guard(user, id); return this.svc.getCashFlowDynamics(id); }
 
   @Get(":creatorId/revenue-forecast")
-  revenueForecast(@Param("creatorId") id: string) { return this.svc.getRevenueForecast(id); }
+  revenueForecast(@CurrentUser() user: JwtUser, @Param("creatorId") id: string) { this.guard(user, id); return this.svc.getRevenueForecast(id); }
 
   @Get(":creatorId/affiliate-referral")
-  affiliateReferral(@Param("creatorId") id: string) { return this.svc.getAffiliateReferral(id); }
+  affiliateReferral(@CurrentUser() user: JwtUser, @Param("creatorId") id: string) { this.guard(user, id); return this.svc.getAffiliateReferral(id); }
 
   @Get(":creatorId/subscription-metrics")
-  subscriptionMetrics(@Param("creatorId") id: string) { return this.svc.getSubscriptionMetrics(id); }
+  subscriptionMetrics(@CurrentUser() user: JwtUser, @Param("creatorId") id: string) { this.guard(user, id); return this.svc.getSubscriptionMetrics(id); }
 
   @Get(":creatorId/revenue-quality")
-  revenueQuality(@Param("creatorId") id: string) { return this.svc.getRevenueQuality(id); }
+  revenueQuality(@CurrentUser() user: JwtUser, @Param("creatorId") id: string) { this.guard(user, id); return this.svc.getRevenueQuality(id); }
 
   @Get(":creatorId/funnel-monetization")
-  funnelMonetization(@Param("creatorId") id: string) { return this.svc.getFunnelMonetization(id); }
+  funnelMonetization(@CurrentUser() user: JwtUser, @Param("creatorId") id: string) { this.guard(user, id); return this.svc.getFunnelMonetization(id); }
 
   @Get(":creatorId/traffic-to-revenue")
-  trafficToRevenue(@Param("creatorId") id: string) { return this.svc.getTrafficToRevenue(id); }
+  trafficToRevenue(@CurrentUser() user: JwtUser, @Param("creatorId") id: string) { this.guard(user, id); return this.svc.getTrafficToRevenue(id); }
 }

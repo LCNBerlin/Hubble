@@ -1,3 +1,4 @@
+import { apiFetch } from "./api";
 import { API_URL } from "./config";
 
 export type CreatePaymentIntentParams = {
@@ -31,7 +32,7 @@ export async function validateCoupon(
   subtotalCents: number
 ): Promise<ValidateCouponResult> {
   try {
-    const res = await fetch(`${API_URL}/validate-coupon`, {
+    const res = await fetch(`${API_URL}/api/payments/validate-coupon`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: code.trim(), subtotalCents }),
@@ -59,9 +60,8 @@ export async function createPaymentIntent(
   params: CreatePaymentIntentParams
 ): Promise<CreatePaymentIntentResult> {
   try {
-    const res = await fetch(`${API_URL}/create-payment-intent`, {
+    const res = await apiFetch("/payments/create-intent", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         amount: params.amountCents,
         currency: params.currency.toLowerCase(),
@@ -123,7 +123,6 @@ export function formatCentsToPrice(cents: number): string {
 
 export type ConfirmOrderParams = {
   paymentIntentId: string;
-  buyerId: string;
   cartItems: Array<{
     productId: string;
     creatorId?: string | null;
@@ -143,15 +142,14 @@ export type ConfirmOrderResult =
 
 /**
  * Confirm order after successful payment. Server creates order + order_items.
+ * buyer identity is derived from the JWT on the server — do not pass buyerId.
  */
 export async function confirmOrder(params: ConfirmOrderParams): Promise<ConfirmOrderResult> {
   try {
-    const res = await fetch(`${API_URL}/confirm-order`, {
+    const res = await apiFetch("/payments/confirm-order", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         paymentIntentId: params.paymentIntentId,
-        buyerId: params.buyerId,
         cartItems: params.cartItems,
         subtotalCents: params.subtotalCents,
         discountCents: params.discountCents ?? 0,
@@ -182,23 +180,21 @@ export type ConfirmDeliveryResult =
   | { ok: false; error: string; code?: number };
 
 export type TrackAbandonedCartParams = {
-  userId: string;
   cartSnapshot: Array<{ productId: string; quantity: number; title?: string; price?: string }>;
   subtotalCents: number;
 };
 
 /**
  * Track abandoned cart (throttle on client, e.g. once per 30 min).
+ * user identity is derived from the JWT on the server.
  */
 export async function trackAbandonedCart(
   params: TrackAbandonedCartParams
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch(`${API_URL}/abandoned-cart`, {
+    const res = await apiFetch("/payments/abandoned-cart", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        userId: params.userId,
         cartSnapshot: params.cartSnapshot,
         subtotalCents: params.subtotalCents,
       }),
@@ -215,13 +211,13 @@ export async function trackAbandonedCart(
 
 /**
  * Get Stripe Connect onboarding URL for creator payouts. Open in browser.
+ * user identity is derived from the JWT on the server.
  */
-export async function getConnectOnboardUrl(userId: string): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+export async function getConnectOnboardUrl(): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   try {
-    const res = await fetch(`${API_URL}/connect/onboard`, {
+    const res = await apiFetch("/payments/connect/onboard", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({}),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -235,17 +231,16 @@ export async function getConnectOnboardUrl(userId: string): Promise<{ ok: true; 
 }
 
 /**
- * Buyer confirms delivery to release escrow. Server sets order status to released.
+ * Buyer confirms delivery to release escrow.
+ * buyer identity is derived from the JWT on the server — do not pass buyerId.
  */
 export async function confirmDelivery(
   orderId: string,
-  buyerId: string
 ): Promise<ConfirmDeliveryResult> {
   try {
-    const res = await fetch(`${API_URL}/orders/${encodeURIComponent(orderId)}/confirm-delivery`, {
+    const res = await apiFetch(`/payments/orders/${encodeURIComponent(orderId)}/confirm-delivery`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ buyerId }),
+      body: JSON.stringify({}),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -264,7 +259,6 @@ export async function confirmDelivery(
 
 /**
  * After a tip payment succeeds, create a tip_received notification for the creator.
- * Call from the client when the tipper has completed payment (e.g. after presentPaymentSheet succeeds).
  */
 export async function createTipNotification(params: {
   recipientId: string;
@@ -273,9 +267,8 @@ export async function createTipNotification(params: {
   targetId?: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await fetch(`${API_URL}/notifications/tip`, {
+    const res = await apiFetch("/notifications/tip", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         recipientId: params.recipientId,
         actorId: params.actorId ?? null,

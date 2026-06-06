@@ -22,8 +22,8 @@ export class PaymentsController {
   }
 
   @Post("confirm-order")
-  confirmOrder(@Body() body: { paymentIntentId: string; buyerId: string; cartItems: { productId: string; creatorId?: string; title: string; priceCents: number; quantity: number }[]; subtotalCents: number; discountCents?: number; totalCents?: number; couponCode?: string }) {
-    return this.payments.confirmOrder(body.paymentIntentId, body.buyerId, body.cartItems, body.subtotalCents, body.discountCents, body.totalCents, body.couponCode);
+  confirmOrder(@CurrentUser() user: JwtUser, @Body() body: { paymentIntentId: string; cartItems: { productId: string; creatorId?: string; title: string; priceCents: number; quantity: number }[]; subtotalCents: number; discountCents?: number; totalCents?: number; couponCode?: string }) {
+    return this.payments.confirmOrder(body.paymentIntentId, user.sub, body.cartItems, body.subtotalCents, body.discountCents, body.totalCents, body.couponCode);
   }
 
   @Post("orders/:id/confirm-delivery")
@@ -32,8 +32,8 @@ export class PaymentsController {
   }
 
   @Post("orders/:id/ship")
-  shipOrder(@Param("id") orderId: string, @Body() body: { carrier?: string; trackingNumber?: string; trackingUrl?: string; status?: string }) {
-    return this.payments.shipOrder(orderId, body.carrier, body.trackingNumber, body.trackingUrl, body.status);
+  shipOrder(@Param("id") orderId: string, @CurrentUser() user: JwtUser, @Body() body: { carrier?: string; trackingNumber?: string; trackingUrl?: string; status?: string }) {
+    return this.payments.shipOrder(orderId, user.sub, body.carrier, body.trackingNumber, body.trackingUrl, body.status);
   }
 
   @Post("abandoned-cart")

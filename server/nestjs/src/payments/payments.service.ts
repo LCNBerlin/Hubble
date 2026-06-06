@@ -128,9 +128,15 @@ export class PaymentsService {
     return { ok: true, orderId };
   }
 
-  async shipOrder(orderId: string, carrier?: string, trackingNumber?: string, trackingUrl?: string, status = "in_transit") {
-    const rows = await this.db.query(`SELECT id FROM orders WHERE id = $1`, [orderId]);
-    if (!rows[0]) throw new NotFoundException("Order not found");
+  async shipOrder(orderId: string, sellerId: string, carrier?: string, trackingNumber?: string, trackingUrl?: string, status = "in_transit") {
+    const rows = await this.db.query(
+      `SELECT o.id FROM orders o
+       JOIN order_items oi ON oi.order_id = o.id
+       WHERE o.id = $1 AND oi.creator_id = $2
+       LIMIT 1`,
+      [orderId, sellerId]
+    );
+    if (!rows[0]) throw new ForbiddenException("Not authorized to ship this order");
     const validStatuses = ["created", "in_transit", "out_for_delivery", "delivered"];
     const shipStatus = validStatuses.includes(status) ? status : "in_transit";
     await this.db.query(

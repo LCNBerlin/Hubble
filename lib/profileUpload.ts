@@ -99,13 +99,12 @@ export async function uploadProfileImage(
   kind: "avatar" | "banner",
   base64Data: string,
   mimeType?: string,
-  authToken?: string
 ): Promise<string> {
   const { contentType, ext } = getContentTypeAndExt(mimeType);
   const key = `${kind === "avatar" ? "avatars" : "banners"}/${userId}.${ext}`;
   try {
     const arrayBuffer = decode(base64Data);
-    return await uploadToS3("profiles", key, arrayBuffer, contentType, authToken);
+    return await uploadToS3("profiles", key, arrayBuffer, contentType);
   } catch (e) {
     console.warn("Profile image upload error:", e);
     if (e instanceof Error) throw e;

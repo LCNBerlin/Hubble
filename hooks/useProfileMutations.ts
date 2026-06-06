@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiPost, apiPatch, apiDelete, getStoredTokens } from "../lib/api";
+import { apiPost, apiPatch, apiDelete } from "../lib/api";
 import { uploadProfileImage } from "../lib/profileUpload";
 import { useAuth } from "../context/AuthContext";
 
@@ -147,8 +147,7 @@ export function useUpdateAvatarMutation() {
   return useMutation({
     mutationFn: async ({ base64, mimeType }: { base64: string; mimeType?: string }) => {
       if (!user?.id) throw new Error("Not authenticated");
-      const { accessToken } = await getStoredTokens();
-      const url = await uploadProfileImage(user.id, "avatar", base64, mimeType, accessToken ?? undefined);
+      const url = await uploadProfileImage(user.id, "avatar", base64, mimeType);
       await apiPatch("/profiles/me/avatar", { avatarUrl: url });
       return url;
     },

@@ -1,4 +1,4 @@
-import { API_URL } from "./config";
+import { apiFetch } from "./api";
 
 /**
  * Requests a presigned S3 PUT URL from the NestJS backend, then uploads
@@ -11,14 +11,9 @@ export async function uploadToS3(
   key: string,
   body: ArrayBuffer,
   contentType: string,
-  authToken?: string
 ): Promise<string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-
-  const presignRes = await fetch(`${API_URL}/api/storage/presign`, {
+  const presignRes = await apiFetch("/storage/presign", {
     method: "POST",
-    headers,
     body: JSON.stringify({ bucket, key, contentType }),
   });
   if (!presignRes.ok) {

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Query, UseGuards, HttpCode } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Headers, Query, UseGuards, HttpCode, UnauthorizedException } from "@nestjs/common";
 import { NotificationsService } from "./notifications.service";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { CurrentUser, JwtUser } from "../common/decorators/current-user.decorator";
@@ -41,10 +41,14 @@ export class NotificationsController {
     return this.notifications.upsertPushToken(user.sub, body.token);
   }
 
-  /** Supabase webhook compatibility — kept for transition period */
   @Public()
   @Post("webhook/notification-created")
-  async webhookNotificationCreated(@Body() body: { type: string; table: string; record: { id: string; recipient_id: string; type: string } }) {
+  async webhookNotificationCreated(
+    @Headers("x-webhook-secret") secret: string,
+    @Body() body: { type: string; table: string; record: { id: string; recipient_id: string; type: string } }
+  ) {
+    const expected = process.env.WEBHOOK_SECRET;
+    if (!expected || secret !== expected) throw new UnauthorizedException("Invalid webhook secret");
     const { type, table, record } = body || {};
     if (type !== "INSERT" || table !== "notifications" || !record?.recipient_id) return { ok: false };
     await this.notifications.sendPush(record.recipient_id, record.type, record.id);

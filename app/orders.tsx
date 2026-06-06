@@ -64,7 +64,7 @@ export default function OrdersScreen() {
     async (orderId: string) => {
       if (!user?.id) return;
       setReleasingId(orderId);
-      const result = await confirmDelivery(orderId, user.id);
+      const result = await confirmDelivery(orderId);
       setReleasingId(null);
       if (result.ok) {
         await fetchOrders();

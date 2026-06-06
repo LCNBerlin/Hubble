@@ -52,7 +52,6 @@ export async function uploadPostMedia(
   localUri: string,
   type: "picture" | "video" | "audio",
   mimeType?: string | null,
-  authToken?: string
 ): Promise<string | null> {
   if (!localUri?.trim()) return null;
   const { ext, contentType } = getExtensionAndContentType(type, mimeType);
@@ -61,7 +60,7 @@ export async function uploadPostMedia(
     const response = await fetch(localUri, { method: "GET" });
     if (!response.ok) return null;
     const arrayBuffer = await response.arrayBuffer();
-    return await uploadToS3("posts", key, arrayBuffer, contentType, authToken);
+    return await uploadToS3("posts", key, arrayBuffer, contentType);
   } catch (e) {
     if (e instanceof Error) throw e;
     console.warn("Post media upload error:", e);
