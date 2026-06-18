@@ -18,7 +18,7 @@ export class CartService {
     await this.db.query(
       `INSERT INTO cart_items (user_id, product_id, quantity, selected_tier_index)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (user_id, product_id) DO UPDATE SET quantity = $3, selected_tier_index = $4, updated_at = NOW()`,
+       ON CONFLICT (user_id, product_id) DO UPDATE SET quantity = $3, selected_tier_index = $4`,
       [userId, productId, quantity, selectedTierIndex]
     );
   }

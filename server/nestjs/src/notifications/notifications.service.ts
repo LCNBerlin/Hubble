@@ -67,13 +67,13 @@ export class NotificationsService {
 
   async sendPush(recipientId: string, notificationType: string, notificationId: string): Promise<void> {
     const tokens = await this.db.query(
-      `SELECT expo_push_token FROM push_tokens WHERE user_id = $1`,
+      `SELECT token FROM push_tokens WHERE user_id = $1`,
       [recipientId]
     );
     if (!tokens?.length) return;
     const { title, body } = PUSH_MESSAGES[notificationType] || { title: "Hubble", body: "You have a new notification" };
-    const messages = tokens.map(({ expo_push_token }: { expo_push_token: string }) => ({
-      to: expo_push_token,
+    const messages = tokens.map(({ token }: { token: string }) => ({
+      to: token,
       title,
       body,
       data: { notificationId, type: notificationType },
@@ -92,9 +92,9 @@ export class NotificationsService {
 
   async upsertPushToken(userId: string, token: string): Promise<void> {
     await this.db.query(
-      `INSERT INTO push_tokens (user_id, expo_push_token, updated_at)
+      `INSERT INTO push_tokens (user_id, token, updated_at)
        VALUES ($1, $2, NOW())
-       ON CONFLICT (user_id, expo_push_token) DO UPDATE SET updated_at = NOW()`,
+       ON CONFLICT (token) DO UPDATE SET user_id = $1, updated_at = NOW()`,
       [userId, token]
     );
   }

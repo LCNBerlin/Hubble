@@ -96,7 +96,7 @@ export class IncomeService {
   async getAffiliateReferral(creatorId: string) {
     return this.cache(`${creatorId}:affiliate`, async () => {
       return this.db.query(
-        `SELECT type, COUNT(*) AS count FROM referral_events WHERE creator_id = $1 GROUP BY type`,
+        `SELECT event_type, COUNT(*) AS count FROM referral_events WHERE referrer_id = $1 GROUP BY event_type`,
         [creatorId]
       );
     });
@@ -138,14 +138,14 @@ export class IncomeService {
     return this.cache(`${creatorId}:subscriptions`, async () => {
       const [products, revenue] = await Promise.all([
         this.db.query(
-          `SELECT COUNT(*) AS cnt FROM products WHERE creator_id = $1 AND product_type = 'membership'`,
+          `SELECT COUNT(*) AS cnt FROM products WHERE creator_id = $1 AND type = 'membership'`,
           [creatorId]
         ),
         this.db.query(
           `SELECT COALESCE(SUM(cp.amount_cents), 0) AS total FROM creator_payouts cp
            JOIN order_items oi ON oi.id = cp.order_item_id
            JOIN products p ON p.id = oi.product_id
-           WHERE cp.creator_id = $1 AND p.product_type = 'membership' AND cp.status = 'paid'`,
+           WHERE cp.creator_id = $1 AND p.type = 'membership' AND cp.status = 'paid'`,
           [creatorId]
         ),
       ]);

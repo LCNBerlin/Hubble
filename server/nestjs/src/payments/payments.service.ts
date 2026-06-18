@@ -29,15 +29,13 @@ export class PaymentsService {
     const row = rows[0];
     if (!row) return { valid: false, discountCents: 0, message: "Code not found" };
     const now = new Date();
-    if (row.valid_from && new Date(row.valid_from) > now) return { valid: false, discountCents: 0, message: "Code not yet valid" };
-    if (row.valid_until && new Date(row.valid_until) < now) return { valid: false, discountCents: 0, message: "Code expired" };
+    if (row.expires_at && new Date(row.expires_at) < now) return { valid: false, discountCents: 0, message: "Code expired" };
     if (row.max_uses != null && row.used_count >= row.max_uses) return { valid: false, discountCents: 0, message: "Code no longer available" };
-    if (row.min_order_cents != null && sub < row.min_order_cents) return { valid: false, discountCents: 0, message: `Minimum order $${(row.min_order_cents / 100).toFixed(2)}` };
     let discountCents = 0;
-    if (row.type === "percent") {
-      discountCents = Math.floor((sub * Math.min(100, Math.max(0, Number(row.value) || 0))) / 100);
-    } else {
-      discountCents = Math.min(Number(row.value) || 0, sub);
+    if (row.discount_percent != null) {
+      discountCents = Math.floor((sub * Math.min(100, Math.max(0, Number(row.discount_percent) || 0))) / 100);
+    } else if (row.discount_cents != null) {
+      discountCents = Math.min(Number(row.discount_cents) || 0, sub);
     }
     return { valid: true, discountCents, message: "OK", promoCodeId: row.id };
   }
@@ -89,9 +87,9 @@ export class PaymentsService {
       if (result.valid && result.promoCodeId) couponId = result.promoCodeId;
     }
     const orderRows = await this.db.query(
-      `INSERT INTO orders (buyer_id, status, subtotal_cents, discount_cents, total_cents, currency, stripe_payment_intent_id, coupon_id, escrow_release_at)
-       VALUES ($1, 'escrow_held', $2, $3, $4, 'usd', $5, $6, $7) RETURNING id`,
-      [buyerId, sub, disc, total, paymentIntentId, couponId, escrowReleaseAt]
+      `INSERT INTO orders (buyer_id, status, subtotal_cents, discount_cents, total_cents, currency, stripe_payment_intent_id, escrow_release_at)
+       VALUES ($1, 'escrow_held', $2, $3, $4, 'usd', $5, $6) RETURNING id`,
+      [buyerId, sub, disc, total, paymentIntentId, escrowReleaseAt]
     );
     const orderId = orderRows[0].id;
     if (couponId) {
@@ -128,7 +126,7 @@ export class PaymentsService {
     return { ok: true, orderId };
   }
 
-  async shipOrder(orderId: string, sellerId: string, carrier?: string, trackingNumber?: string, trackingUrl?: string, status = "in_transit") {
+  async shipOrder(orderId: string, sellerId: string, carrier?: string, trackingNumber?: string, _trackingUrl?: string, status = "in_transit") {
     const rows = await this.db.query(
       `SELECT o.id FROM orders o
        JOIN order_items oi ON oi.order_id = o.id
@@ -140,18 +138,17 @@ export class PaymentsService {
     const validStatuses = ["created", "in_transit", "out_for_delivery", "delivered"];
     const shipStatus = validStatuses.includes(status) ? status : "in_transit";
     await this.db.query(
-      `INSERT INTO shipments (order_id, carrier, tracking_number, tracking_url, status, updated_at) VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [orderId, carrier || null, trackingNumber || null, trackingUrl || null, shipStatus]
+      `INSERT INTO shipments (order_id, carrier, tracking_number, status) VALUES ($1, $2, $3, $4)`,
+      [orderId, carrier || null, trackingNumber || null, shipStatus]
     );
     return { ok: true };
   }
 
-  async trackAbandonedCart(userId: string, cartSnapshot: unknown[], subtotalCents: number) {
+  async trackAbandonedCart(userId: string, cartSnapshot: unknown[], _subtotalCents: number) {
+    await this.db.query(`DELETE FROM abandoned_carts WHERE user_id = $1`, [userId]);
     await this.db.query(
-      `INSERT INTO abandoned_carts (user_id, cart_snapshot, subtotal_cents, updated_at)
-       VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (user_id) DO UPDATE SET cart_snapshot = $2, subtotal_cents = $3, updated_at = NOW()`,
-      [userId, JSON.stringify(cartSnapshot), Math.round(Number(subtotalCents)) || 0]
+      `INSERT INTO abandoned_carts (user_id, cart_snapshot) VALUES ($1, $2)`,
+      [userId, JSON.stringify(cartSnapshot)]
     );
     return { ok: true };
   }

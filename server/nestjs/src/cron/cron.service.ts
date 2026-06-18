@@ -40,15 +40,17 @@ export class CronService {
     const now = new Date().toISOString();
     const in24h = new Date(Date.now() + 86_400_000).toISOString();
     const appointments = await this.db.query(
-      `SELECT id, user_id, creator_id, scheduled_at FROM appointments
-       WHERE scheduled_at >= $1 AND scheduled_at <= $2
-       AND reminder_notification_sent_at IS NULL
-       AND status IN ('pending', 'confirmed')`,
+      `SELECT a.id, a.client_id, a.creator_id, a.scheduled_at FROM appointments a
+       WHERE a.scheduled_at >= $1 AND a.scheduled_at <= $2
+       AND a.status IN ('pending', 'confirmed')
+       AND NOT EXISTS (
+         SELECT 1 FROM notifications n
+         WHERE n.target_type = 'appointment' AND n.target_id = a.id AND n.type = 'appointment_reminder'
+       )`,
       [now, in24h]
     );
     for (const apt of appointments) {
-      await this.notif.insert(apt.user_id, "appointment_reminder", apt.creator_id, "appointment", apt.id, { scheduled_at: apt.scheduled_at });
-      await this.db.query(`UPDATE appointments SET reminder_notification_sent_at = NOW() WHERE id = $1`, [apt.id]);
+      await this.notif.insert(apt.client_id, "appointment_reminder", apt.creator_id, "appointment", apt.id, { scheduled_at: apt.scheduled_at });
     }
     if (appointments.length > 0) this.logger.log(`Appointment reminders sent: ${appointments.length}`);
   }

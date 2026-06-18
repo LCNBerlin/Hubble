@@ -139,6 +139,7 @@ export class FeedService {
   }
 
   async getTrendingPosts(hoursWindow = 24, maxCount = 50): Promise<unknown[]> {
+    const safeHours = Math.max(1, Math.min(168, Math.floor(Number(hoursWindow) || 24)));
     return this.db.query(
       `SELECT p.id, p.user_id, p.type, p.title, p.body, p.media_uri, p.created_at,
               p.is_sponsored, p.place_name, p.poll_options,
@@ -146,22 +147,23 @@ export class FeedService {
        FROM post_likes pl
        JOIN posts p ON p.id = pl.post_id
        LEFT JOIN profiles pr ON pr.id = p.user_id
-       WHERE pl.created_at > NOW() - INTERVAL '${hoursWindow} hours'
+       WHERE pl.created_at > NOW() - ($1 * INTERVAL '1 hour')
        GROUP BY p.id, pr.username, pr.display_name, pr.avatar_url
-       ORDER BY COUNT(pl.*) DESC LIMIT $1`,
-      [maxCount]
+       ORDER BY COUNT(pl.*) DESC LIMIT $2`,
+      [safeHours, maxCount]
     );
   }
 
   async getTrendingHashtags(daysWindow = 7, maxCount = 20): Promise<{ name: string; count: number }[]> {
+    const safeDays = Math.max(1, Math.min(90, Math.floor(Number(daysWindow) || 7)));
     return this.db.query(
       `SELECT h.name, COUNT(*) AS count
        FROM post_hashtags ph
        JOIN hashtags h ON h.id = ph.hashtag_id
        JOIN posts p ON p.id = ph.post_id
-       WHERE p.created_at > NOW() - INTERVAL '${daysWindow} days'
-       GROUP BY h.name ORDER BY count DESC LIMIT $1`,
-      [maxCount]
+       WHERE p.created_at > NOW() - ($1 * INTERVAL '1 day')
+       GROUP BY h.name ORDER BY count DESC LIMIT $2`,
+      [safeDays, maxCount]
     );
   }
 }

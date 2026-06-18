@@ -29,7 +29,7 @@ export class StorageItemsService {
 
     if (view === "posts" || view === "all") {
       const posts = await this.db.query(
-        `SELECT id, title, post_type AS type, media_uri, thumbnail_uri FROM posts WHERE user_id = $1 ORDER BY created_at DESC`,
+        `SELECT id, title, type, media_uri, thumbnail_uri FROM posts WHERE user_id = $1 ORDER BY created_at DESC`,
         [userId]
       );
       items.push(...posts.map((r: Record<string, unknown>) => ({ ...r, kind: "post" })));

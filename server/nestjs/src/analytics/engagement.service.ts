@@ -161,8 +161,8 @@ export class EngagementService {
   async getMessagingEngagement(creatorId: string) {
     return this.cache(`${creatorId}:messaging-engagement`, async () => {
       const rows = await this.db.query(
-        `SELECT COUNT(*) AS grants, COALESCE(SUM(amount_cents), 0) AS revenue
-         FROM dm_access_grants WHERE creator_id = $1`,
+        `SELECT COUNT(*) AS grants, COALESCE(SUM(price_cents), 0) AS revenue
+         FROM dm_access_grants WHERE granter_id = $1`,
         [creatorId]
       );
       return { dmGrants: Number(rows[0]?.grants ?? 0), dmRevenueCents: Number(rows[0]?.revenue ?? 0) };

@@ -10,11 +10,11 @@ export class MessagingService {
       `SELECT c.*,
         (SELECT m.body FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message,
         (SELECT m.created_at FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message_at,
-        (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != $1 AND m.read_at IS NULL) AS unread_count,
+        (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != $1 AND m.created_at > COALESCE(cp.last_read_at, '1970-01-01')) AS unread_count,
         (SELECT cp2.user_id FROM conversation_participants cp2 WHERE cp2.conversation_id = c.id AND cp2.user_id != $1 LIMIT 1) AS peer_id
        FROM conversations c
        JOIN conversation_participants cp ON cp.conversation_id = c.id
-       WHERE cp.user_id = $1 AND c.archived_at IS NULL
+       WHERE cp.user_id = $1 AND cp.archived = false
        ORDER BY last_message_at DESC NULLS LAST`,
       [userId]
     );
@@ -42,9 +42,10 @@ export class MessagingService {
       [conversationId, senderId]
     );
     if (!membership[0]) throw new ForbiddenException("Not a participant");
+    const metadata = mediaUrl ? { media_url: mediaUrl } : null;
     const rows = await this.db.query(
-      `INSERT INTO messages (conversation_id, sender_id, body, media_url) VALUES ($1, $2, $3, $4) RETURNING *`,
-      [conversationId, senderId, body, mediaUrl || null]
+      `INSERT INTO messages (conversation_id, sender_id, body, metadata) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [conversationId, senderId, body, metadata ? JSON.stringify(metadata) : null]
     );
     return rows[0];
   }
@@ -54,11 +55,11 @@ export class MessagingService {
       `SELECT c.id FROM conversations c
        JOIN conversation_participants cp1 ON cp1.conversation_id = c.id AND cp1.user_id = $1
        JOIN conversation_participants cp2 ON cp2.conversation_id = c.id AND cp2.user_id = $2
-       WHERE c.is_group = false LIMIT 1`,
+       WHERE c.type = 'direct' LIMIT 1`,
       [userId, peerId]
     );
     if (existing[0]) return existing[0];
-    const conv = await this.db.query(`INSERT INTO conversations (is_group) VALUES (false) RETURNING id`, []);
+    const conv = await this.db.query(`INSERT INTO conversations (type) VALUES ('direct') RETURNING id`, []);
     const convId = conv[0].id;
     await this.db.query(
       `INSERT INTO conversation_participants (conversation_id, user_id) VALUES ($1, $2), ($1, $3)`,
@@ -69,14 +70,14 @@ export class MessagingService {
 
   async archiveConversation(conversationId: string, userId: string): Promise<void> {
     await this.db.query(
-      `UPDATE conversation_participants SET archived_at = NOW() WHERE conversation_id = $1 AND user_id = $2`,
+      `UPDATE conversation_participants SET archived = true WHERE conversation_id = $1 AND user_id = $2`,
       [conversationId, userId]
     );
   }
 
   async markRead(conversationId: string, userId: string): Promise<void> {
     await this.db.query(
-      `UPDATE messages SET read_at = NOW() WHERE conversation_id = $1 AND sender_id != $2 AND read_at IS NULL`,
+      `UPDATE conversation_participants SET last_read_at = NOW() WHERE conversation_id = $1 AND user_id = $2`,
       [conversationId, userId]
     );
   }
@@ -97,7 +98,7 @@ export class MessagingService {
     let i = 3;
     if (updates.pinned !== undefined) { fields.push(`pinned = $${i++}`); values.push(updates.pinned); }
     if (updates.muted !== undefined) { fields.push(`muted = $${i++}`); values.push(updates.muted); }
-    if (updates.archived !== undefined) { fields.push(`archived_at = $${i++}`); values.push(updates.archived ? new Date() : null); }
+    if (updates.archived !== undefined) { fields.push(`archived = $${i++}`); values.push(updates.archived); }
     if (!fields.length) return;
     await this.db.query(
       `UPDATE conversation_participants SET ${fields.join(", ")} WHERE conversation_id = $1 AND user_id = $2`,
