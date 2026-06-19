@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
+    "start:tunnel": "expo start --tunnel",
     "start:clear": "expo start --clear",
     "start:fast": "cross-env NODE_OPTIONS=--max-old-space-size=8192 expo start --clear",
     "watchman:reset": "watchman watch-del-all || true",

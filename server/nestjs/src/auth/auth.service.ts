@@ -48,22 +48,19 @@ export class AuthService {
   }
 
   async refresh(rawToken: string): Promise<{ accessToken: string; refreshToken: string }> {
-    const tokenHash = await bcrypt.hash(rawToken, 10);
-    const stored = await this.refreshTokens
-      .createQueryBuilder("rt")
-      .where("rt.expires_at > NOW()")
-      .getMany();
+    const [tokenId, rawSecret] = rawToken.split(":");
+    if (!tokenId || !rawSecret) throw new UnauthorizedException("Invalid or expired refresh token");
 
-    const match = await Promise.all(
-      stored.map(async (rt) => ({ rt, ok: await bcrypt.compare(rawToken, rt.tokenHash) }))
-    ).then((results) => results.find((r) => r.ok)?.rt);
+    const stored = await this.refreshTokens.findOne({ where: { id: tokenId } });
+    if (!stored || stored.expiresAt < new Date()) throw new UnauthorizedException("Invalid or expired refresh token");
 
-    if (!match) throw new UnauthorizedException("Invalid or expired refresh token");
+    const valid = await bcrypt.compare(rawSecret, stored.tokenHash);
+    if (!valid) throw new UnauthorizedException("Invalid or expired refresh token");
 
-    const profile = await this.profiles.findOne({ where: { id: match.userId } });
+    const profile = await this.profiles.findOne({ where: { id: stored.userId } });
     if (!profile) throw new NotFoundException("User not found");
 
-    await this.refreshTokens.delete({ id: match.id });
+    await this.refreshTokens.delete({ id: stored.id });
     return this.issueTokens(profile.id, profile.email);
   }
 
@@ -74,14 +71,14 @@ export class AuthService {
   private async issueTokens(userId: string, email: string) {
     const accessToken = this.jwt.sign({ sub: userId, email });
 
-    const rawRefresh = uuidv4();
-    const tokenHash = await bcrypt.hash(rawRefresh, 10);
+    const rawSecret = uuidv4();
+    const tokenHash = await bcrypt.hash(rawSecret, 10);
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    await this.refreshTokens.save(
+    const saved = await this.refreshTokens.save(
       this.refreshTokens.create({ userId, tokenHash, expiresAt })
     );
 
-    return { accessToken, refreshToken: rawRefresh };
+    return { accessToken, refreshToken: `${saved.id}:${rawSecret}` };
   }
 }

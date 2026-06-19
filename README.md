@@ -102,15 +102,17 @@ Create a `.env` file at the repo root:
 
 | Variable | Description |
 |---|---|
-| `EXPO_PUBLIC_API_URL` | NestJS API base URL. Use machine LAN IP (e.g. `http://192.168.1.x:4243`) for physical device; `http://localhost:4243` for simulator. |
+| `EXPO_PUBLIC_API_URL` | NestJS API base URL. Use Railway URL for tunnel/production; machine LAN IP (e.g. `http://192.168.1.x:4243`) for same-network device; `http://localhost:4243` for simulator. |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (`pk_test_...` or `pk_live_...`) |
 
 ### 3. Run dev build
 
 ```bash
-npx expo start
-# Press i for iOS simulator, a for Android emulator, or scan QR with Expo Go
+npm start               # local network (simulator or same-WiFi device)
+npm run start:tunnel    # tunnel mode — phone works on any network (LTE, different WiFi)
 ```
+
+Scan the QR code with Expo Go. Tunnel mode requires internet on both laptop and phone but works anywhere — no need to be on the same network.
 
 > **lightningcss binary fix**: if Expo crashes on start with a native binary error, run `node node_modules/lightningcss/scripts/install.js` then restart.
 
@@ -273,4 +275,5 @@ Hubble is fully migrated from Supabase to a self-hosted NestJS + Postgres stack:
 - Use [TablePlus](https://tableplus.com) or `psql` to inspect the database.
 - Redis: `redis-server` locally or `docker run -p 6379:6379 redis`. Skip entirely to run without caching.
 - For S3 locally, use [LocalStack](https://localstack.cloud) or point to a real bucket.
-- Physical device testing: set `EXPO_PUBLIC_API_URL` to your machine's LAN IP, not `localhost`.
+- Physical device (same WiFi): set `EXPO_PUBLIC_API_URL` to your machine's LAN IP, not `localhost`.
+- Physical device (any network): set `EXPO_PUBLIC_API_URL` to your Railway URL and run `npm run start:tunnel`. No LAN required.

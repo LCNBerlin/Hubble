@@ -41,5 +41,5 @@ export function parseHashtagSegments(text: string | null | undefined): HashtagSe
 
 /** Sync post hashtags via NestJS API. Call after inserting or updating a post. */
 export async function syncPostHashtags(_client: unknown, postId: string, tagNames: string[]): Promise<void> {
-  apiPost(`/posts/${postId}/hashtags`, { tagNames }).catch(() => {});
+  await apiPost(`/posts/${postId}/hashtags`, { tagNames }).catch(() => {});
 }

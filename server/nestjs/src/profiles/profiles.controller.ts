@@ -25,14 +25,26 @@ export class ProfilesController {
     return this.profiles.findById(user.sub);
   }
 
-  @Get(":id")
-  getProfile(@Param("id") id: string) {
-    return this.profiles.findById(id);
+  @Get("search")
+  search(@Query("q") q: string, @Query("limit") limit = "20") {
+    return this.profiles.searchProfiles(q, Number(limit));
+  }
+
+  @Get("by-ids")
+  getByIds(@Query("ids") ids: string) {
+    const idList = ids?.split(",").filter(Boolean) ?? [];
+    return Promise.all(idList.map((id) => this.profiles.findById(id).catch(() => null)))
+      .then((profiles) => profiles.filter(Boolean));
   }
 
   @Get("username/:username")
   getByUsername(@Param("username") username: string) {
     return this.profiles.findByUsername(username);
+  }
+
+  @Get(":id")
+  getProfile(@Param("id") id: string) {
+    return this.profiles.findById(id);
   }
 
   @Patch("me")
@@ -94,21 +106,9 @@ export class ProfilesController {
     return this.profiles.updateAvatar(user.sub, body.avatarUrl).then(() => ({ ok: true }));
   }
 
-  @Get("search")
-  search(@Query("q") q: string, @Query("limit") limit = "20") {
-    return this.profiles.searchProfiles(q, Number(limit));
-  }
-
   @Get("me/following-ids")
   getFollowingIds(@CurrentUser() user: JwtUser) {
     return this.profiles.getFollowingIds(user.sub);
-  }
-
-  @Get("by-ids")
-  getByIds(@Query("ids") ids: string) {
-    const idList = ids?.split(",").filter(Boolean) ?? [];
-    return Promise.all(idList.map((id) => this.profiles.findById(id).catch(() => null)))
-      .then((profiles) => profiles.filter(Boolean));
   }
 
   @Get(":id/follow-status")

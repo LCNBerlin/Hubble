@@ -36,6 +36,7 @@ import {
   requestForegroundPermissionsAsync,
 } from "../../lib/location";
 import { uploadPostMedia } from "../../lib/postUpload";
+import { uploadToS3 } from "../../lib/s3-upload";
 import { createRevenueSplit, getProfileIdByUsername } from "../../lib/revenue-splits";
 import { productToRow } from "../../lib/supabase-products";
 import { apiPost } from "../../lib/api";
@@ -1890,7 +1891,6 @@ export default function CreateScreen() {
         // non-blocking; post still created without thumbnail
       }
     }
-    setCreatePostType(null);
     if (user) {
       const apiPayload: Record<string, unknown> = {
         type: createPostType,
@@ -1904,19 +1904,26 @@ export default function CreateScreen() {
       if (data.place_name != null) apiPayload.placeName = data.place_name;
       if (data.scheduledAt != null) apiPayload.scheduledAt = new Date(data.scheduledAt).toISOString();
       if (pollOpts?.length) apiPayload.pollOptions = pollOpts;
-      const inserted = await apiPost<{ id: string }>("/posts", apiPayload).catch(() => null);
+      let inserted: { id: string } | null = null;
+      try {
+        inserted = await apiPost<{ id: string }>("/posts", apiPayload);
+      } catch (err) {
+        Alert.alert("Post failed", err instanceof Error ? err.message : "Something went wrong.");
+        return;
+      }
       if (inserted?.id) {
         const fromContent = getHashtagsFromPostContent(title ?? "", body ?? null);
         const fromInput = (data.hashtags ?? []).map((t) => t.toLowerCase().replace(/^#/, ""));
         const tagNames = [...new Set([...fromContent, ...fromInput])].filter(Boolean);
         await syncPostHashtags(null, inserted.id, tagNames);
       }
+      setCreatePostType(null);
+      Alert.alert(
+        "Post created",
+        "View it on your profile.",
+        [{ text: "OK", onPress: () => router.replace("/(tabs)/profile") }]
+      );
     }
-    Alert.alert(
-      "Post created",
-      "View it on your profile.",
-      [{ text: "OK", onPress: () => router.replace("/(tabs)/profile") }]
-    );
   };
 
   const handleSubmitProduct = async (data: {
@@ -1937,13 +1944,64 @@ export default function CreateScreen() {
     revenueSplits?: { partnerUsername: string; splitPercent: number }[];
   }) => {
     if (!createProductType) return;
-    const payload = {
+    if (!user?.id) {
+      Alert.alert("Error", "You must be signed in to create a product.");
+      return;
+    }
+
+    const isImageProduct = createProductType === "physical" || createProductType === "nft" || createProductType === "live";
+    const isDigitalProduct = createProductType === "digital";
+
+    let uploadedMediaUri = data.mediaUri;
+    let uploadedCoverUri = data.coverUri;
+
+    if (isImageProduct && data.mediaUri) {
+      try {
+        uploadedMediaUri = await uploadPostMedia(user.id, data.mediaUri, "picture") ?? undefined;
+      } catch (err) {
+        Alert.alert("Upload failed", err instanceof Error ? err.message : "Image upload failed.");
+        return;
+      }
+    }
+
+    if (isDigitalProduct) {
+      if (data.coverUri) {
+        try {
+          uploadedCoverUri = await uploadPostMedia(user.id, data.coverUri, "picture") ?? undefined;
+        } catch (err) {
+          Alert.alert("Upload failed", err instanceof Error ? err.message : "Cover upload failed.");
+          return;
+        }
+      }
+      if (data.mediaUri) {
+        const mime = (data.mediaMimeType ?? "application/octet-stream").toLowerCase();
+        try {
+          if (mime.startsWith("video/")) {
+            uploadedMediaUri = await uploadPostMedia(user.id, data.mediaUri, "video", data.mediaMimeType) ?? undefined;
+          } else if (mime.startsWith("audio/")) {
+            uploadedMediaUri = await uploadPostMedia(user.id, data.mediaUri, "audio", data.mediaMimeType) ?? undefined;
+          } else {
+            const ext = mime.split("/")[1]?.split(";")[0] ?? "bin";
+            const key = `${user.id}/${Date.now()}.${ext}`;
+            const response = await fetch(data.mediaUri);
+            if (!response.ok) throw new Error(`Could not read file (${response.status})`);
+            const buffer = await response.arrayBuffer();
+            uploadedMediaUri = await uploadToS3("posts", key, buffer, mime);
+          }
+        } catch (err) {
+          Alert.alert("Upload failed", err instanceof Error ? err.message : "File upload failed.");
+          return;
+        }
+      }
+    }
+
+    const row = productToRow({
       type: createProductType,
       title: data.title,
       description: data.description || undefined,
       price: data.price || undefined,
-      mediaUri: data.mediaUri,
-      coverUri: data.coverUri,
+      mediaUri: uploadedMediaUri,
+      coverUri: uploadedCoverUri,
       mediaMimeType: data.mediaMimeType,
       interval: data.interval,
       priceTiers: data.priceTiers,
@@ -1952,36 +2010,31 @@ export default function CreateScreen() {
       eventTime: data.eventTime,
       categories: data.categories?.slice(0, 3),
       tags: data.tags,
-      creatorId: user?.id ?? undefined,
+      creatorId: user.id,
       goLiveAt: data.goLiveAt,
-    };
-    if (!user?.id) {
-      Alert.alert("Error", "You must be signed in to create a product.");
-      return;
-    }
-    const row = productToRow({ ...payload, creatorId: user.id }, user.id);
+    }, user.id);
+
     const inserted = await apiPost<{ id: string }>("/products", row).catch((err: unknown) => {
       Alert.alert("Could not create product", err instanceof Error ? err.message : "Something went wrong.");
       return null;
     });
     if (!inserted) return;
-    if (inserted) {
-      const productId = inserted.id;
-      if (data.revenueSplits?.length && user?.id) {
-        for (const s of data.revenueSplits) {
-          const partnerId = await getProfileIdByUsername(s.partnerUsername);
-          if (partnerId) {
-            await createRevenueSplit({
-              ownerId: user.id,
-              partnerId,
-              targetType: "product",
-              targetId: productId,
-              splitPercent: s.splitPercent,
-            });
-          }
+
+    if (data.revenueSplits?.length) {
+      for (const s of data.revenueSplits) {
+        const partnerId = await getProfileIdByUsername(s.partnerUsername);
+        if (partnerId) {
+          await createRevenueSplit({
+            ownerId: user.id,
+            partnerId,
+            targetType: "product",
+            targetId: inserted.id,
+            splitPercent: s.splitPercent,
+          });
         }
       }
     }
+
     setCreateProductType(null);
     Alert.alert(
       "Product created",

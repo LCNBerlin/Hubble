@@ -39,7 +39,9 @@ export class FeedService {
   }
 
   async invalidateFeedCache(userId: string): Promise<void> {
-    await this.redis.del(`feed:ranked:${userId}:0`);
+    await Promise.all(
+      [0, 50, 100, 150, 200].map((offset) => this.redis.del(`feed:ranked:${userId}:${offset}`))
+    );
   }
 
   private async computeFeed(userId: string, limit: number, offset: number): Promise<unknown[]> {

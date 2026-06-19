@@ -1,12 +1,19 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, HttpCode } from "@nestjs/common";
+import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
 import { PostsService } from "./posts.service";
+import { FeedService } from "../feed/feed.service";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { CurrentUser, JwtUser } from "../common/decorators/current-user.decorator";
+
+class AddCommentDto {
+  @IsString() @MinLength(1) @MaxLength(5000) body: string;
+  @IsOptional() @IsUUID() parentId?: string;
+}
 
 @Controller("posts")
 @UseGuards(JwtAuthGuard)
 export class PostsController {
-  constructor(private posts: PostsService) {}
+  constructor(private posts: PostsService, private feed: FeedService) {}
 
   @Get("search")
   search(@Query("q") q: string, @Query("limit") limit = "20") {
@@ -38,8 +45,10 @@ export class PostsController {
   }
 
   @Post()
-  create(@CurrentUser() user: JwtUser, @Body() body: Record<string, unknown>) {
-    return this.posts.create(user.sub, body);
+  async create(@CurrentUser() user: JwtUser, @Body() body: Record<string, unknown>) {
+    const post = await this.posts.create(user.sub, body);
+    await this.feed.invalidateFeedCache(user.sub);
+    return post;
   }
 
   @Patch(":id")
@@ -49,8 +58,9 @@ export class PostsController {
 
   @Delete(":id")
   @HttpCode(204)
-  delete(@Param("id") id: string, @CurrentUser() user: JwtUser) {
-    return this.posts.delete(id, user.sub);
+  async delete(@Param("id") id: string, @CurrentUser() user: JwtUser) {
+    await this.posts.delete(id, user.sub);
+    await this.feed.invalidateFeedCache(user.sub);
   }
 
   @Post(":id/like")
@@ -69,7 +79,7 @@ export class PostsController {
   }
 
   @Post(":id/comments")
-  addComment(@Param("id") id: string, @CurrentUser() user: JwtUser, @Body() body: { body: string; parentId?: string }) {
+  addComment(@Param("id") id: string, @CurrentUser() user: JwtUser, @Body() body: AddCommentDto) {
     return this.posts.addComment(id, user.sub, body.body, body.parentId);
   }
 

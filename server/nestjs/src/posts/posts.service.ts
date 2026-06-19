@@ -70,10 +70,10 @@ export class PostsService {
       `UPDATE posts SET
          title = COALESCE($1, title),
          body = COALESCE($2, body),
-         media_uri = $3,
-         lat = $4,
-         lng = $5,
-         place_name = $6,
+         media_uri = COALESCE($3, media_uri),
+         lat = COALESCE($4, lat),
+         lng = COALESCE($5, lng),
+         place_name = COALESCE($6, place_name),
          updated_at = NOW()
        WHERE id = $7 RETURNING *`,
       [data.title ?? null, data.body ?? null, data.media_uri ?? null, data.lat ?? null, data.lng ?? null, data.place_name ?? null, postId]
@@ -91,16 +91,19 @@ export class PostsService {
 
   async syncHashtags(postId: string, tagNames: string[]): Promise<void> {
     await this.db.query(`DELETE FROM post_hashtags WHERE post_id = $1`, [postId]);
-    for (const name of tagNames) {
-      const [htag] = await this.db.query(
-        `INSERT INTO hashtags (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
-        [name.toLowerCase()]
-      );
-      await this.db.query(
-        `INSERT INTO post_hashtags (post_id, hashtag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [postId, htag.id]
-      );
-    }
+    if (!tagNames.length) return;
+    const names = tagNames.map((n) => n.toLowerCase());
+    const htags = await this.db.query(
+      `INSERT INTO hashtags (name) SELECT UNNEST($1::varchar[])
+       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+      [names]
+    );
+    const ids = htags.map((r: { id: string }) => r.id);
+    await this.db.query(
+      `INSERT INTO post_hashtags (post_id, hashtag_id)
+       SELECT $1, UNNEST($2::uuid[]) ON CONFLICT DO NOTHING`,
+      [postId, ids]
+    );
   }
 
   async delete(postId: string, userId: string): Promise<void> {

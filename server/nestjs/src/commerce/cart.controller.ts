@@ -21,7 +21,7 @@ export class CartController {
   @Patch("items/:productId")
   @HttpCode(204)
   updateItem(@CurrentUser() user: JwtUser, @Param("productId") productId: string, @Body() body: { quantity?: number; selectedTierIndex?: number }) {
-    return this.cart.upsertItem(user.sub, productId, body.quantity ?? 1, body.selectedTierIndex ?? 0);
+    return this.cart.updateItem(user.sub, productId, body.quantity, body.selectedTierIndex);
   }
 
   @Delete("items/:productId")

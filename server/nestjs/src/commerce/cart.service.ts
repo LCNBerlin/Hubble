@@ -27,6 +27,16 @@ export class CartService {
     await this.db.query(`DELETE FROM cart_items WHERE user_id = $1 AND product_id = $2`, [userId, productId]);
   }
 
+  async updateItem(userId: string, productId: string, quantity?: number, selectedTierIndex?: number): Promise<void> {
+    await this.db.query(
+      `UPDATE cart_items SET
+         quantity = COALESCE($3, quantity),
+         selected_tier_index = COALESCE($4, selected_tier_index)
+       WHERE user_id = $1 AND product_id = $2`,
+      [userId, productId, quantity ?? null, selectedTierIndex ?? null]
+    );
+  }
+
   async clearCart(userId: string): Promise<void> {
     await this.db.query(`DELETE FROM cart_items WHERE user_id = $1`, [userId]);
   }

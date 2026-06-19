@@ -58,7 +58,8 @@ export async function uploadPostMedia(
   const key = `${userId}/${Date.now()}.${ext}`;
   try {
     const response = await fetch(localUri, { method: "GET" });
-    if (!response.ok) return null;
+    if (!response.ok) throw new Error(`Could not read media file (${response.status})`);
+
     const arrayBuffer = await response.arrayBuffer();
     return await uploadToS3("posts", key, arrayBuffer, contentType);
   } catch (e) {

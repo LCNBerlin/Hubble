@@ -1,7 +1,13 @@
 import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, HttpCode } from "@nestjs/common";
+import { IsOptional, IsString, IsUrl, MaxLength, MinLength } from "class-validator";
 import { MessagingService } from "./messaging.service";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { CurrentUser, JwtUser } from "../common/decorators/current-user.decorator";
+
+class SendMessageDto {
+  @IsString() @MinLength(1) @MaxLength(10000) body: string;
+  @IsOptional() @IsString() @IsUrl() mediaUrl?: string;
+}
 
 @Controller("messaging")
 @UseGuards(JwtAuthGuard)
@@ -29,7 +35,7 @@ export class MessagingController {
   }
 
   @Post("conversations/:id/messages")
-  sendMessage(@Param("id") id: string, @CurrentUser() user: JwtUser, @Body() body: { body: string; mediaUrl?: string }) {
+  sendMessage(@Param("id") id: string, @CurrentUser() user: JwtUser, @Body() body: SendMessageDto) {
     return this.messaging.sendMessage(id, user.sub, body.body, body.mediaUrl);
   }
 
